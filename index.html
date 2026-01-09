@@ -3,23 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Docx Tool V3</title>
+    <title>Docx Tool Fresh</title>
     <link rel="stylesheet" href="index.css">
     <script src="https://unpkg.com/docx@7.1.0/build/index.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-</head>
+    </head>
 <body>
 
 <div class="app-layout">
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
-            <span class="brand">DOCX TOOL</span>
+            <span class="brand">✨ DOCX TOOL</span>
             <span class="count-badge" id="fileCount">0</span>
         </div>
 
         <div class="sidebar-content" id="sidebarList">
-            <div class="empty-text">Chưa có file</div>
+            <div class="empty-text">Chưa có file nào</div>
         </div>
 
         <div class="sidebar-footer">
@@ -27,60 +27,60 @@
                 <input type="checkbox" id="selectAllSidebar"> 
                 <label for="selectAllSidebar">Chọn tất cả</label>
             </div>
-            <button class="btn-block-download" id="btnDownloadAll">Tải ZIP</button>
+            <button class="btn-gradient full-width" id="btnDownloadAll">Tải xuống (ZIP)</button>
         </div>
     </aside>
 
     <main class="main-area">
-        <div class="top-tabs">
-            <button class="icon-btn sidebar-toggle" id="toggleSidebar" title="Menu">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
-            </button>
-            <div class="tab-nav">
-                <button class="tab-btn active" data-tab="editor-view">📝 Soạn thảo</button>
-                <button class="tab-btn" data-tab="manager-view">📂 Quản lý file</button>
+        <div class="top-nav">
+            <div class="nav-left">
+                <button class="icon-btn" id="toggleSidebar" title="Menu">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                </button>
+                <div class="tab-group">
+                    <button class="tab-pill active" data-tab="editor-view">Soạn thảo</button>
+                    <button class="tab-pill" data-tab="manager-view">Quản lý file</button>
+                </div>
             </div>
         </div>
 
         <div id="editor-view" class="view-content active">
-            <header class="toolbar">
-                <div class="chapter-control">
-                    <div class="input-wrap">
-                        <span class="label">Chương:</span>
+            <div class="toolbar-card">
+                <div class="chapter-info">
+                    <div class="input-box">
+                        <label>Chương</label>
                         <input type="number" id="chapterNum" value="1" min="1">
                     </div>
-                    <div class="next-hint">Tiếp theo: <span id="nextNum">2</span></div>
-                    <button class="btn-text" id="btnReset">Reset 1</button>
+                    <span class="next-hint">Tiếp: <b id="nextNum" style="color: var(--primary)">2</b></span>
                 </div>
 
-                <div class="actions-right">
-                    <button class="btn-secondary" id="btnClearOnly">Xóa trắng</button>
-                    <button class="btn-primary" id="btnMerge">Gộp chương</button>
+                <div class="action-group">
+                    <button class="btn-ghost" id="btnReset" title="Về chương 1 ngay lập tức">↺ Reset 1</button>
+                    <button class="btn-outline" id="btnClearOnly">Xóa trắng</button>
+                    <button class="btn-gradient" id="btnMerge">⚡ Gộp chương</button>
                 </div>
-            </header>
+            </div>
 
-            <div class="editor-container">
+            <div class="editor-wrapper">
                 <textarea id="editor" placeholder="Dán nội dung truyện vào đây...
-- Hệ thống tự động cách 1 dòng giữa các đoạn.
-- Font: Calibri, Size 16.
-- Gộp xong tự động xóa nội dung để nhập chương mới."></textarea>
+✨ Tự động cách dòng giữa các đoạn văn.
+✨ Font Calibri - Size 16 chuẩn chỉ."></textarea>
             </div>
         </div>
 
         <div id="manager-view" class="view-content">
-            <div class="manager-container">
+            <div class="manager-card">
                 <div class="manager-header">
-                    <h3>Danh sách file đã tạo</h3>
-                    <button class="btn-danger-outline" id="btnDeleteSelected">Xóa đã chọn</button>
+                    <h3>📂 Danh sách file</h3>
+                    <button class="btn-danger-soft" id="btnDeleteSelected">Xóa đã chọn</button>
                 </div>
-                <div class="manager-list-header">
-                    <div class="col-check"><input type="checkbox" id="selectAllManager"></div>
-                    <div class="col-name">Tên file</div>
-                    <div class="col-action">Hành động</div>
+                <div class="file-table-header">
+                    <div class="th-check"><input type="checkbox" id="selectAllManager"></div>
+                    <div class="th-name">Tên file</div>
+                    <div class="th-action">Tác vụ</div>
                 </div>
-                <div class="manager-list-body" id="managerList">
-                    <div class="empty-state">Danh sách trống</div>
-                </div>
+                <div class="file-list-body" id="managerList">
+                    </div>
             </div>
         </div>
     </main>
