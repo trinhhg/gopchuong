@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tool Gộp Chương Truyện sang DOCX</title>
+    <title>Tool Gộp Chương Truyện (Clean UI)</title>
     
     <link rel="stylesheet" href="index.css">
 
@@ -13,51 +13,80 @@
 </head>
 <body>
 
-<div class="container">
-    <div class="main-content">
-        <div class="editor-container">
-            <textarea id="contentInput" placeholder="Dán nội dung chương truyện vào đây..."></textarea>
+<div class="app-container">
+    
+    <header class="mobile-header">
+        <span class="logo">Gộp Chương Tool</span>
+        <button id="toggleSidebarBtn">☰ DS Chương</button>
+    </header>
+
+    <main class="main-content">
+        <div class="tabs-nav">
+            <button class="tab-btn active" data-tab="tab-merge">Gộp chương</button>
+            <button class="tab-btn" data-tab="tab-download">Quản lý & Tải xuống</button>
         </div>
 
-        <div class="controls">
-            <div class="status-bar">
-                <label>Chương hiện tại:</label>
-                <input type="number" id="chapterNumInput" class="input-chapter" value="1" min="1">
-                <span style="color: #6b7280;">(Chương tiếp theo sẽ là: <span id="nextChapterLabel">2</span>)</span>
-            </div>
+        <div id="tab-merge" class="tab-content active">
+            <div class="card">
+                <div class="input-group-row">
+                    <div class="input-wrapper">
+                        <label>Chương hiện tại</label>
+                        <input type="number" id="currentChapterInput" value="1" min="1">
+                    </div>
+                    <div class="info-wrapper">
+                        <span>Tiếp theo: <strong id="nextChapterLabel">2</strong></span>
+                    </div>
+                    <button class="btn-text-danger" id="btnResetNumber">Reset về 1</button>
+                </div>
 
-            <div class="btn-group">
-                <button class="btn-primary" id="btnProcess">Gộp & Tạo chương</button>
-                <button class="btn-secondary" id="btnProcessClear">Gộp & Làm trống ô</button>
-                <button class="btn-danger" id="btnReset">Reset số chương (Về 1)</button>
+                <div class="editor-wrapper">
+                    <textarea id="textContent" placeholder="Dán nội dung chương truyện vào đây..."></textarea>
+                </div>
+
+                <div class="action-bar">
+                    <button class="btn btn-primary" id="btnMerge">Gộp chương</button>
+                    <button class="btn btn-secondary" id="btnMergeClear">Gộp & Làm trống</button>
+                </div>
             </div>
         </div>
-    </div>
 
-    <div class="sidebar">
+        <div id="tab-download" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h3>Danh sách file đã gộp</h3>
+                    <button class="btn btn-success" id="btnDownloadBatchTab">Tải các file đã chọn</button>
+                </div>
+                <div class="list-container" id="tabFileList">
+                    <div class="empty-state">Chưa có chương nào được gộp</div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
-            <h3>Danh sách đã gộp</h3>
-            <div style="font-size: 12px; color: #666;">
-                Tổng số file: <span id="fileCount">0</span>
-            </div>
+            <h3>Danh sách nhanh</h3>
+            <span class="badge" id="fileCountBadge">0</span>
         </div>
-
-        <div class="file-list" id="fileList">
-            <div style="text-align: center; color: #999; margin-top: 20px;">Chưa có chương nào được gộp</div>
+        
+        <div class="sidebar-scroll" id="sidebarFileList">
+            <div class="empty-state-small">Trống</div>
         </div>
 
         <div class="sidebar-footer">
-            <div style="margin-bottom: 10px;">
-                <input type="checkbox" id="selectAll"> <label for="selectAll">Chọn tất cả</label>
-            </div>
-            <button class="btn-success" style="width: 100%;" id="btnDownloadAll">Tải các file đã chọn (ZIP)</button>
+            <label class="checkbox-wrapper">
+                <input type="checkbox" id="selectAllSidebar"> Chọn tất cả
+            </label>
+            <button class="btn btn-sm btn-outline" id="btnDownloadBatchSidebar">Tải đã chọn</button>
         </div>
-    </div>
+    </aside>
+
+    <div class="overlay" id="overlay"></div>
+
 </div>
 
-<div id="toast" class="toast">Đã tạo xong</div>
+<div id="toast" class="toast">Thông báo</div>
 
 <script src="index.js"></script>
-
 </body>
 </html>
