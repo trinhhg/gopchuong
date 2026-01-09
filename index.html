@@ -3,90 +3,64 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tool Gộp Chương Truyện (Clean UI)</title>
-    
+    <title>Docx Tool Pro</title>
     <link rel="stylesheet" href="index.css">
-
     <script src="https://unpkg.com/docx@7.1.0/build/index.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
 
-<div class="app-container">
-    
-    <header class="mobile-header">
-        <span class="logo">Gộp Chương Tool</span>
-        <button id="toggleSidebarBtn">☰ DS Chương</button>
-    </header>
-
-    <main class="main-content">
-        <div class="tabs-nav">
-            <button class="tab-btn active" data-tab="tab-merge">Gộp chương</button>
-            <button class="tab-btn" data-tab="tab-download">Quản lý & Tải xuống</button>
-        </div>
-
-        <div id="tab-merge" class="tab-content active">
-            <div class="card">
-                <div class="input-group-row">
-                    <div class="input-wrapper">
-                        <label>Chương hiện tại</label>
-                        <input type="number" id="currentChapterInput" value="1" min="1">
-                    </div>
-                    <div class="info-wrapper">
-                        <span>Tiếp theo: <strong id="nextChapterLabel">2</strong></span>
-                    </div>
-                    <button class="btn-text-danger" id="btnResetNumber">Reset về 1</button>
-                </div>
-
-                <div class="editor-wrapper">
-                    <textarea id="textContent" placeholder="Dán nội dung chương truyện vào đây..."></textarea>
-                </div>
-
-                <div class="action-bar">
-                    <button class="btn btn-primary" id="btnMerge">Gộp chương</button>
-                    <button class="btn btn-secondary" id="btnMergeClear">Gộp & Làm trống</button>
-                </div>
-            </div>
-        </div>
-
-        <div id="tab-download" class="tab-content">
-            <div class="card">
-                <div class="card-header">
-                    <h3>Danh sách file đã gộp</h3>
-                    <button class="btn btn-success" id="btnDownloadBatchTab">Tải các file đã chọn</button>
-                </div>
-                <div class="list-container" id="tabFileList">
-                    <div class="empty-state">Chưa có chương nào được gộp</div>
-                </div>
-            </div>
-        </div>
-    </main>
-
+<div class="app-layout">
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
-            <h3>Danh sách nhanh</h3>
-            <span class="badge" id="fileCountBadge">0</span>
+            <span class="brand">DOCX TOOL</span>
+            <span class="count-badge" id="fileCount">0</span>
         </div>
-        
-        <div class="sidebar-scroll" id="sidebarFileList">
-            <div class="empty-state-small">Trống</div>
+
+        <div class="sidebar-content" id="sidebarList">
+            <div class="empty-text">Chưa có file</div>
         </div>
 
         <div class="sidebar-footer">
-            <label class="checkbox-wrapper">
-                <input type="checkbox" id="selectAllSidebar"> Chọn tất cả
-            </label>
-            <button class="btn btn-sm btn-outline" id="btnDownloadBatchSidebar">Tải đã chọn</button>
+            <div class="tool-row">
+                <input type="checkbox" id="selectAll"> 
+                <label for="selectAll">Chọn tất cả</label>
+            </div>
+            <button class="btn-block-download" id="btnDownloadAll">Tải (ZIP)</button>
         </div>
     </aside>
 
-    <div class="overlay" id="overlay"></div>
+    <main class="main-area">
+        <header class="toolbar">
+            <button class="icon-btn" id="toggleSidebar" title="Đóng/Mở Sidebar">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+            </button>
+            
+            <div class="chapter-control">
+                <div class="input-wrap">
+                    <span class="label">Chương:</span>
+                    <input type="number" id="chapterNum" value="1" min="1">
+                </div>
+                <div class="next-hint">Tiếp theo: <span id="nextNum">2</span></div>
+                <button class="btn-text" id="btnReset">Reset 1</button>
+            </div>
 
+            <div class="actions-right">
+                <button class="btn-primary" id="btnMerge">Gộp</button>
+                <button class="btn-secondary" id="btnMergeClear">Gộp & Xóa</button>
+            </div>
+        </header>
+
+        <div class="editor-container">
+            <textarea id="editor" placeholder="Dán nội dung truyện vào đây...
+Hệ thống sẽ tự động thêm dòng 'Chương X' ở đầu file DOCX.
+Font: Calibri, Size 16."></textarea>
+        </div>
+    </main>
 </div>
 
-<div id="toast" class="toast">Thông báo</div>
-
+<div id="toast">Thông báo</div>
 <script src="index.js"></script>
 </body>
 </html>
