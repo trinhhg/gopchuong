@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tool Gộp Chương Truyện sang DOCX</title>
+    
+    <link rel="stylesheet" href="index.css">
+
+    <script src="https://unpkg.com/docx@7.1.0/build/index.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+</head>
+<body>
+
+<div class="container">
+    <div class="main-content">
+        <div class="editor-container">
+            <textarea id="contentInput" placeholder="Dán nội dung chương truyện vào đây..."></textarea>
+        </div>
+
+        <div class="controls">
+            <div class="status-bar">
+                <label>Chương hiện tại:</label>
+                <input type="number" id="chapterNumInput" class="input-chapter" value="1" min="1">
+                <span style="color: #6b7280;">(Chương tiếp theo sẽ là: <span id="nextChapterLabel">2</span>)</span>
+            </div>
+
+            <div class="btn-group">
+                <button class="btn-primary" id="btnProcess">Gộp & Tạo chương</button>
+                <button class="btn-secondary" id="btnProcessClear">Gộp & Làm trống ô</button>
+                <button class="btn-danger" id="btnReset">Reset số chương (Về 1)</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h3>Danh sách đã gộp</h3>
+            <div style="font-size: 12px; color: #666;">
+                Tổng số file: <span id="fileCount">0</span>
+            </div>
+        </div>
+
+        <div class="file-list" id="fileList">
+            <div style="text-align: center; color: #999; margin-top: 20px;">Chưa có chương nào được gộp</div>
+        </div>
+
+        <div class="sidebar-footer">
+            <div style="margin-bottom: 10px;">
+                <input type="checkbox" id="selectAll"> <label for="selectAll">Chọn tất cả</label>
+            </div>
+            <button class="btn-success" style="width: 100%;" id="btnDownloadAll">Tải các file đã chọn (ZIP)</button>
+        </div>
+    </div>
+</div>
+
+<div id="toast" class="toast">Đã tạo xong</div>
+
+<script src="index.js"></script>
+
+</body>
+</html>
