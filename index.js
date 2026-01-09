@@ -1,193 +1,232 @@
-// --- 1. BIẾN TRẠNG THÁI ---
-let currentChapterNumber = 1;
-let generatedFiles = []; // Mảng chứa object: { id, name, blob, selected }
+// --- CONFIG & STATE ---
+const STATE = {
+    currentChapter: 1,
+    files: [] // { id, name, blob, selected }
+};
 
-// --- 2. CÁC DOM ELEMENT ---
-const chapterNumInput = document.getElementById('chapterNumInput');
-const nextChapterLabel = document.getElementById('nextChapterLabel');
-const contentInput = document.getElementById('contentInput');
-const fileListEl = document.getElementById('fileList');
-const fileCountEl = document.getElementById('fileCount');
-const selectAllCheckbox = document.getElementById('selectAll');
+// --- DOM ELEMENTS ---
+const els = {
+    // Tabs
+    tabs: document.querySelectorAll('.tab-btn'),
+    contents: document.querySelectorAll('.tab-content'),
+    
+    // Inputs
+    chapterNum: document.getElementById('currentChapterInput'),
+    nextLabel: document.getElementById('nextChapterLabel'),
+    text: document.getElementById('textContent'),
+    
+    // Buttons
+    btnMerge: document.getElementById('btnMerge'),
+    btnMergeClear: document.getElementById('btnMergeClear'),
+    btnReset: document.getElementById('btnResetNumber'),
+    
+    // Sidebar & Lists
+    sidebarList: document.getElementById('sidebarFileList'),
+    tabList: document.getElementById('tabFileList'),
+    fileCount: document.getElementById('fileCountBadge'),
+    checkAllSidebar: document.getElementById('selectAllSidebar'),
+    
+    // Download Buttons
+    btnDlSidebar: document.getElementById('btnDownloadBatchSidebar'),
+    btnDlTab: document.getElementById('btnDownloadBatchTab'),
+    
+    // Mobile
+    toggleSidebar: document.getElementById('toggleSidebarBtn'),
+    sidebar: document.getElementById('sidebar'),
+    overlay: document.getElementById('overlay'),
+    
+    // Toast
+    toast: document.getElementById('toast')
+};
 
-// Nút bấm
-const btnProcess = document.getElementById('btnProcess');
-const btnProcessClear = document.getElementById('btnProcessClear');
-const btnReset = document.getElementById('btnReset');
-const btnDownloadAll = document.getElementById('btnDownloadAll');
-
-// --- 3. GẮN SỰ KIỆN (EVENT LISTENERS) ---
-
-// Sự kiện thay đổi số chương
-chapterNumInput.addEventListener('change', (e) => {
-    let val = parseInt(e.target.value);
-    if (val < 1 || isNaN(val)) val = 1;
-    currentChapterNumber = val;
-    updateUIState();
-});
-
-// Sự kiện các nút bấm
-btnProcess.addEventListener('click', () => processChapter(false));
-btnProcessClear.addEventListener('click', () => processChapter(true));
-btnReset.addEventListener('click', resetChapterNumber);
-btnDownloadAll.addEventListener('click', downloadSelected);
-selectAllCheckbox.addEventListener('change', toggleSelectAll);
-
-// Khởi tạo UI lần đầu
-updateUIState();
-
-// --- 4. CÁC HÀM LOGIC ---
-
-function updateUIState() {
-    chapterNumInput.value = currentChapterNumber;
-    nextChapterLabel.innerText = currentChapterNumber + 1;
+// --- INIT ---
+function init() {
+    updateChapterUI();
+    bindEvents();
 }
 
-async function processChapter(clearAfter) {
-    const text = contentInput.value;
+// --- LOGIC: CHUYỂN TAB ---
+function switchTab(tabId) {
+    els.tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === tabId));
+    els.contents.forEach(c => c.classList.toggle('active', c.id === tabId));
+}
+
+// --- LOGIC: UPDATE UI SỐ CHƯƠNG ---
+function updateChapterUI() {
+    els.chapterNum.value = STATE.currentChapter;
+    els.nextLabel.textContent = STATE.currentChapter + 1;
+}
+
+// --- LOGIC: RENDER LIST FILE (ĐỒNG BỘ SIDEBAR & TAB 2) ---
+function renderLists() {
+    els.fileCount.textContent = STATE.files.length;
+    
+    // Render Sidebar (Dạng gọn)
+    const sidebarHTML = STATE.files.map(f => createItemHTML(f, 'sidebar')).reverse().join('');
+    els.sidebarList.innerHTML = sidebarHTML || '<div class="empty-state-small">Trống</div>';
+
+    // Render Tab List (Dạng chi tiết hơn nếu cần, nhưng hiện tại dùng chung structure)
+    const tabHTML = STATE.files.map(f => createItemHTML(f, 'tab')).reverse().join(''); // Reverse để mới nhất lên đầu
+    els.tabList.innerHTML = tabHTML || '<div class="empty-state">Chưa có chương nào được gộp</div>';
+    
+    // Re-bind events cho checkbox và nút download lẻ
+    bindDynamicEvents();
+}
+
+function createItemHTML(file, context) {
+    return `
+        <div class="file-item ${file.selected ? 'selected' : ''}" onclick="toggleSelect(${file.id})">
+            <input type="checkbox" ${file.selected ? 'checked' : ''} onclick="event.stopPropagation(); toggleSelect(${file.id})">
+            <span class="name" title="${file.name}">${file.name}</span>
+            <div class="actions">
+                <button class="btn btn-sm btn-outline" onclick="event.stopPropagation(); downloadSingle(${file.id})">⬇</button>
+            </div>
+        </div>
+    `;
+}
+
+// --- LOGIC: GỘP CHƯƠNG (CORE) ---
+async function handleMerge(clear) {
+    const text = els.text.value;
     if (!text.trim()) {
-        showToast("Vui lòng nhập nội dung chương!");
+        showToast('⚠️ Chưa nhập nội dung!');
         return;
     }
 
-    // Tạo file DOCX
-    const docName = `Chương ${currentChapterNumber}.docx`;
-    const blob = await createDocxBlob(text, `Chương ${currentChapterNumber}`);
+    const docName = `Chương ${STATE.currentChapter}.docx`;
+    
+    try {
+        const blob = await createDocx(text, `Chương ${STATE.currentChapter}`);
+        
+        STATE.files.push({
+            id: Date.now(),
+            name: docName,
+            blob: blob,
+            selected: false
+        });
 
-    // Lưu vào danh sách
-    const fileObj = {
-        id: Date.now(),
-        name: docName,
-        blob: blob,
-        chapterNum: currentChapterNumber
-    };
-    generatedFiles.push(fileObj);
-
-    // Cập nhật Logic số chương
-    currentChapterNumber++;
-    updateUIState();
-
-    // Xử lý ô nhập liệu
-    if (clearAfter) {
-        contentInput.value = "";
+        // Update Logic
+        STATE.currentChapter++;
+        updateChapterUI();
+        
+        if (clear) els.text.value = '';
+        
+        renderLists();
+        showToast(`✅ Đã tạo: ${docName}`);
+        
+    } catch (e) {
+        console.error(e);
+        showToast('❌ Lỗi khi tạo file');
     }
-
-    // Cập nhật Sidebar
-    renderFileList();
-    showToast(`Đã tạo: ${docName}`);
 }
 
-function createDocxBlob(textConent, title) {
-    // Sử dụng thư viện docx từ window (do đã load ở CDN)
+// --- LOGIC: TẠO DOCX (Thư viện) ---
+function createDocx(text, title) {
     const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } = docx;
+    const lines = text.split('\n');
+    
+    const children = [
+        new Paragraph({
+            text: title,
+            heading: HeadingLevel.HEADING_1,
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 240, before: 240 }
+        }),
+        ...lines.map(line => new Paragraph({
+            children: [new TextRun({ text: line, size: 24 })],
+            spacing: { after: 120 }
+        }))
+    ];
 
-    // Tách dòng để tạo các đoạn văn
-    const lines = textConent.split('\n');
-    const paragraphs = lines.map(line => new Paragraph({
-        children: [new TextRun({ text: line, size: 24 })], // Size 24 = 12pt
-        spacing: { after: 120 }
-    }));
-
-    // Thêm tiêu đề chương vào đầu
-    paragraphs.unshift(new Paragraph({
-        text: title,
-        heading: HeadingLevel.HEADING_1,
-        alignment: AlignmentType.CENTER,
-        spacing: { after: 240, before: 240 }
-    }));
-
-    const doc = new Document({
-        sections: [{
-            properties: {},
-            children: paragraphs
-        }]
-    });
-
+    const doc = new Document({ sections: [{ children }] });
     return Packer.toBlob(doc);
 }
 
-function renderFileList() {
-    fileCountEl.innerText = generatedFiles.length;
-    fileListEl.innerHTML = "";
+// --- EVENTS ---
+function bindEvents() {
+    // Tabs
+    els.tabs.forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
 
-    if (generatedFiles.length === 0) {
-        fileListEl.innerHTML = '<div style="text-align: center; color: #999; margin-top: 20px;">Chưa có chương nào được gộp</div>';
-        return;
-    }
-
-    generatedFiles.forEach((file) => {
-        const div = document.createElement('div');
-        div.className = 'file-item';
-        // Nút tải lẻ gắn hàm trực tiếp tại đây cho đơn giản
-        div.innerHTML = `
-            <input type="checkbox" class="file-check" data-id="${file.id}">
-            <span class="file-name" title="${file.name}">${file.name}</span>
-            <button class="btn-sm btn-primary download-single-btn" data-id="${file.id}">Tải</button>
-        `;
-        fileListEl.appendChild(div);
-    });
-    
-    // Gắn sự kiện cho các nút tải lẻ vừa tạo
-    document.querySelectorAll('.download-single-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            downloadSingle(parseInt(this.dataset.id));
-        });
+    // Inputs
+    els.chapterNum.addEventListener('change', (e) => {
+        let val = parseInt(e.target.value);
+        if (val < 1 || isNaN(val)) val = 1;
+        STATE.currentChapter = val;
+        updateChapterUI();
     });
 
-    // Reset check all
-    selectAllCheckbox.checked = false;
+    // Actions
+    els.btnMerge.addEventListener('click', () => handleMerge(false));
+    els.btnMergeClear.addEventListener('click', () => handleMerge(true));
+    els.btnReset.addEventListener('click', () => {
+        if(confirm('Chỉ reset số chương về 1?')) {
+            STATE.currentChapter = 1;
+            updateChapterUI();
+            showToast('Đã reset số chương');
+        }
+    });
+
+    // Checkbox All
+    els.checkAllSidebar.addEventListener('change', (e) => {
+        const isChecked = e.target.checked;
+        STATE.files.forEach(f => f.selected = isChecked);
+        renderLists();
+    });
+
+    // Batch Download
+    els.btnDlSidebar.addEventListener('click', downloadBatch);
+    els.btnDlTab.addEventListener('click', downloadBatch);
+
+    // Mobile Sidebar
+    els.toggleSidebar.addEventListener('click', () => {
+        els.sidebar.classList.add('open');
+        els.overlay.classList.add('open');
+    });
+    els.overlay.addEventListener('click', () => {
+        els.sidebar.classList.remove('open');
+        els.overlay.classList.remove('open');
+    });
 }
 
-function resetChapterNumber() {
-    if(confirm("Bạn có chắc chắn muốn reset số chương về 1? (Các file đã tạo sẽ không bị xóa)")) {
-        currentChapterNumber = 1;
-        updateUIState();
-        showToast("Đã reset số chương về 1");
+function bindDynamicEvents() {
+    // Logic này đã được nhúng vào onclick trong HTML string để đơn giản hóa
+}
+
+// --- HELPERS ---
+function toggleSelect(id) {
+    const f = STATE.files.find(x => x.id === id);
+    if (f) {
+        f.selected = !f.selected;
+        renderLists(); // Re-render để update UI selected state
     }
 }
 
 function downloadSingle(id) {
-    const file = generatedFiles.find(f => f.id === id);
-    if (file) {
-        saveAs(file.blob, file.name);
-    }
+    const f = STATE.files.find(x => x.id === id);
+    if (f) saveAs(f.blob, f.name);
 }
 
-function toggleSelectAll() {
-    const checkboxes = document.querySelectorAll('.file-check');
-    checkboxes.forEach(cb => cb.checked = selectAllCheckbox.checked);
-}
-
-function downloadSelected() {
-    const checkboxes = document.querySelectorAll('.file-check:checked');
-    if (checkboxes.length === 0) {
-        showToast("Vui lòng chọn ít nhất 1 file để tải!");
+function downloadBatch() {
+    const selected = STATE.files.filter(f => f.selected);
+    if (selected.length === 0) {
+        showToast('⚠️ Chưa chọn file nào');
         return;
     }
 
     const zip = new JSZip();
-    let count = 0;
-
-    checkboxes.forEach(cb => {
-        const id = parseInt(cb.dataset.id);
-        const file = generatedFiles.find(f => f.id === id);
-        if (file) {
-            zip.file(file.name, file.blob);
-            count++;
-        }
+    selected.forEach(f => zip.file(f.name, f.blob));
+    
+    zip.generateAsync({type:"blob"}).then(content => {
+        saveAs(content, `Chapter_Export_${Date.now()}.zip`);
+        showToast(`📦 Đang tải ${selected.length} file...`);
     });
-
-    if (count > 0) {
-        zip.generateAsync({type:"blob"}).then(function(content) {
-            saveAs(content, `Truyen_Export_${Date.now()}.zip`);
-            showToast(`Đang tải xuống ${count} file...`);
-        });
-    }
 }
 
 function showToast(msg) {
-    const t = document.getElementById('toast');
-    t.innerText = msg;
-    t.classList.add('show');
-    setTimeout(() => t.classList.remove('show'), 3000);
+    els.toast.textContent = msg;
+    els.toast.classList.add('show');
+    setTimeout(() => els.toast.classList.remove('show'), 2000);
 }
+
+// Run
+init();
