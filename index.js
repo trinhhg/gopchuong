@@ -1,80 +1,75 @@
 // --- STATE ---
 let currentChapter = 1;
-let files = []; // { id, name, blob, selected }
+let files = []; 
 
 // --- DOM ELEMENTS ---
 const els = {
-    // Nav
-    tabs: document.querySelectorAll('.tab-btn'),
+    tabs: document.querySelectorAll('.tab-pill'),
     views: document.querySelectorAll('.view-content'),
     sidebar: document.getElementById('sidebar'),
     toggleSidebar: document.getElementById('toggleSidebar'),
-
-    // Editor
     editor: document.getElementById('editor'),
     chapterNum: document.getElementById('chapterNum'),
     nextNum: document.getElementById('nextNum'),
+    
+    // Buttons
     btnReset: document.getElementById('btnReset'),
     btnMerge: document.getElementById('btnMerge'),
     btnClearOnly: document.getElementById('btnClearOnly'),
+    btnDownloadAll: document.getElementById('btnDownloadAll'),
+    btnDeleteSelected: document.getElementById('btnDeleteSelected'),
 
-    // Lists
+    // Lists & Checkboxes
     sidebarList: document.getElementById('sidebarList'),
     managerList: document.getElementById('managerList'),
     fileCount: document.getElementById('fileCount'),
-    
-    // Checkboxes
     selectAllSidebar: document.getElementById('selectAllSidebar'),
     selectAllManager: document.getElementById('selectAllManager'),
 
-    // Global
-    toast: document.getElementById('toast'),
-    btnDownloadAll: document.getElementById('btnDownloadAll'),
-    btnDeleteSelected: document.getElementById('btnDeleteSelected')
+    toast: document.getElementById('toast')
 };
 
 // --- INIT ---
 function init() {
     updateChapterUI();
-    
-    // 1. Tab Switching
+
+    // 1. Sidebar Logic (Sửa lỗi che khuất)
+    els.toggleSidebar.addEventListener('click', () => {
+        els.sidebar.classList.toggle('collapsed');
+    });
+
+    // 2. Tab Logic
     els.tabs.forEach(btn => {
         btn.addEventListener('click', () => {
-            // Remove active
             els.tabs.forEach(t => t.classList.remove('active'));
             els.views.forEach(v => v.classList.remove('active'));
-            // Add active
             btn.classList.add('active');
             document.getElementById(btn.dataset.tab).classList.add('active');
         });
     });
 
-    // 2. Sidebar Toggle
-    els.toggleSidebar.addEventListener('click', () => els.sidebar.classList.toggle('collapsed'));
+    // 3. Reset Button Logic (Không Confirm - Reset ngay)
+    els.btnReset.addEventListener('click', () => {
+        currentChapter = 1;
+        updateChapterUI();
+        showToast('↺ Đã reset về chương 1');
+    });
 
-    // 3. Chapter Logic
+    // 4. Merge & Clear
+    els.btnMerge.addEventListener('click', () => merge(true));
+    els.btnClearOnly.addEventListener('click', () => {
+        els.editor.value = '';
+        showToast('Đã xóa trắng khung nhập');
+    });
+
+    // 5. Input Logic
     els.chapterNum.addEventListener('change', (e) => {
         let val = parseInt(e.target.value) || 1;
         currentChapter = val;
         updateChapterUI();
     });
-    els.btnReset.addEventListener('click', () => {
-        if(confirm('Reset số chương về 1?')) {
-            currentChapter = 1;
-            updateChapterUI();
-        }
-    });
 
-    // 4. Action Buttons
-    // Nút Gộp: Gộp xong -> Xóa text
-    els.btnMerge.addEventListener('click', () => merge(true));
-    
-    // Nút Xóa trắng: Chỉ xóa text
-    els.btnClearOnly.addEventListener('click', () => {
-        if(confirm('Xóa trắng nội dung đang soạn?')) els.editor.value = '';
-    });
-
-    // 5. Select All Logic (Sync giữa 2 tab)
+    // 6. Select All & Bulk Actions
     const handleSelectAll = (checked) => {
         files.forEach(f => f.selected = checked);
         renderAllLists();
@@ -83,13 +78,11 @@ function init() {
     };
     els.selectAllSidebar.addEventListener('change', (e) => handleSelectAll(e.target.checked));
     els.selectAllManager.addEventListener('change', (e) => handleSelectAll(e.target.checked));
-
-    // 6. Bulk Actions
     els.btnDownloadAll.addEventListener('click', downloadBatch);
     els.btnDeleteSelected.addEventListener('click', deleteBatch);
 }
 
-// --- CORE LOGIC: MERGE ---
+// --- MERGE LOGIC ---
 async function merge(autoClear) {
     const rawContent = els.editor.value;
     if (!rawContent.trim()) return showToast('⚠️ Chưa nhập nội dung!');
@@ -101,45 +94,46 @@ async function merge(autoClear) {
         const blob = await generateDocx(title, rawContent);
         
         files.push({ id: Date.now(), name: docName, blob, selected: false });
-        
         currentChapter++;
         updateChapterUI();
         
         if(autoClear) els.editor.value = '';
-        
         renderAllLists();
-        showToast(`✅ Đã gộp: ${docName}`);
+        showToast(`⚡ Đã tạo: ${docName}`);
     } catch (e) {
         console.error(e);
-        showToast('❌ Lỗi hệ thống');
+        showToast('❌ Lỗi tạo file');
     }
 }
 
-// --- CORE LOGIC: DOCX GENERATOR (AUTO SPACING) ---
+// --- DOCX GENERATOR (AUTO SPACING LOGIC) ---
 function generateDocx(titleText, rawContent) {
     const { Document, Packer, Paragraph, TextRun } = docx;
     const FONT_NAME = "Calibri";
     const FONT_SIZE = 32; // 16pt
 
-    // XỬ LÝ TEXT: 
-    // 1. Tách theo dòng mới (\n)
-    // 2. Lọc bỏ các dòng trống hoàn toàn (trim() === '') để tránh bị double space nếu user đã cách sẵn
-    // 3. Sau này Docx sẽ tự thêm spacing giữa các đoạn -> Tạo hiệu ứng cách 1 dòng chuẩn.
-    const paragraphsRaw = rawContent.split('\n').filter(line => line.trim() !== '');
+    // LOGIC TỰ ĐỘNG CÁCH DÒNG:
+    // 1. Split text bằng \n
+    // 2. Trim từng dòng và Filter bỏ dòng rỗng để tránh khoảng trống thừa thãi
+    // 3. Tạo Paragraph với spacing after = 240 (tương đương 1 dòng trống)
+    
+    const paragraphsRaw = rawContent.split('\n')
+        .map(line => line.trim())       // Xóa khoảng trắng thừa đầu đuôi
+        .filter(line => line.length > 0); // Bỏ dòng trống tuyệt đối
 
     const docChildren = [];
 
-    // Tiêu đề
+    // Header Chương
     docChildren.push(new Paragraph({
         children: [new TextRun({ text: titleText, font: FONT_NAME, size: FONT_SIZE })],
-        spacing: { after: 240 } // Khoảng cách sau tiêu đề
+        spacing: { after: 300 } // Cách nội dung một chút
     }));
 
-    // Nội dung (Mỗi đoạn văn cách nhau khoảng 240twip ~ 1 dòng trống)
+    // Nội dung
     paragraphsRaw.forEach(line => {
         docChildren.push(new Paragraph({
-            children: [new TextRun({ text: line.trim(), font: FONT_NAME, size: FONT_SIZE })],
-            spacing: { after: 240 } // Tạo khoảng trắng phía dưới đoạn văn
+            children: [new TextRun({ text: line, font: FONT_NAME, size: FONT_SIZE })],
+            spacing: { after: 240 } // Tự động tạo khoảng cách dưới mỗi đoạn
         }));
     });
 
@@ -157,10 +151,9 @@ function renderAllLists() {
 function renderSidebar() {
     els.sidebarList.innerHTML = '';
     if (files.length === 0) {
-        els.sidebarList.innerHTML = '<div class="empty-text">Chưa có file</div>';
+        els.sidebarList.innerHTML = '<div class="empty-text">Chưa có file nào</div>';
         return;
     }
-    // Reverse để file mới nhất lên đầu
     [...files].reverse().forEach(f => {
         const div = document.createElement('div');
         div.className = `file-item ${f.selected ? 'selected' : ''}`;
@@ -173,18 +166,18 @@ function renderSidebar() {
 function renderManager() {
     els.managerList.innerHTML = '';
     if (files.length === 0) {
-        els.managerList.innerHTML = '<div class="empty-state">Danh sách trống</div>';
+        els.managerList.innerHTML = '<div style="text-align:center; padding:30px; color:#9ca3af">Danh sách trống</div>';
         return;
     }
     [...files].reverse().forEach(f => {
         const div = document.createElement('div');
-        div.className = 'row-item';
+        div.className = 'file-row';
         div.innerHTML = `
             <div class="col-check"><input type="checkbox" ${f.selected ? 'checked' : ''} onchange="toggleSelect(${f.id})"></div>
-            <div class="col-name" title="${f.name}">${f.name}</div>
-            <div class="col-action">
-                <button class="btn-icon btn-dl" onclick="downloadOne(${f.id})" title="Tải xuống">⬇</button>
-                <button class="btn-icon btn-del" onclick="deleteOne(${f.id})" title="Xóa">🗑</button>
+            <div class="col-name">${f.name}</div>
+            <div class="col-action action-btns">
+                <button class="mini-btn btn-dl" onclick="downloadOne(${f.id})">⬇</button>
+                <button class="mini-btn btn-del" onclick="deleteOne(${f.id})">✕</button>
             </div>
         `;
         els.managerList.appendChild(div);
@@ -200,41 +193,6 @@ function toggleSelect(id) {
     }
 }
 
-function downloadOne(id) {
-    const f = files.find(x => x.id === id);
-    if(f) saveAs(f.blob, f.name);
-}
-
-function deleteOne(id) {
-    if(confirm('Bạn muốn xóa file này?')) {
-        files = files.filter(f => f.id !== id);
-        renderAllLists();
-        showToast('Đã xóa file');
-    }
-}
-
-function deleteBatch() {
-    const selected = files.filter(f => f.selected);
-    if(selected.length === 0) return showToast('⚠️ Chưa chọn file nào');
-    
-    if(confirm(`Xóa vĩnh viễn ${selected.length} file đã chọn?`)) {
-        files = files.filter(f => !f.selected);
-        renderAllLists();
-        els.selectAllSidebar.checked = false;
-        els.selectAllManager.checked = false;
-        showToast('Đã xóa các file đã chọn');
-    }
-}
-
-function downloadBatch() {
-    const selected = files.filter(f => f.selected);
-    if(selected.length === 0) return showToast('⚠️ Chưa chọn file để tải');
-
-    const zip = new JSZip();
-    selected.forEach(f => zip.file(f.name, f.blob));
-    zip.generateAsync({type:"blob"}).then(c => saveAs(c, `Export_${Date.now()}.zip`));
-}
-
 function updateChapterUI() {
     els.chapterNum.value = currentChapter;
     els.nextNum.innerText = currentChapter + 1;
@@ -246,5 +204,35 @@ function showToast(msg) {
     setTimeout(() => els.toast.classList.remove('show'), 2000);
 }
 
-// RUN
+// Helpers cho Download/Delete
+function downloadOne(id) {
+    const f = files.find(x => x.id === id);
+    if(f) saveAs(f.blob, f.name);
+}
+function deleteOne(id) {
+    if(confirm('Xóa file này?')) {
+        files = files.filter(f => f.id !== id);
+        renderAllLists();
+    }
+}
+function downloadBatch() {
+    const selected = files.filter(f => f.selected);
+    if(!selected.length) return showToast('⚠️ Chưa chọn file');
+    const zip = new JSZip();
+    selected.forEach(f => zip.file(f.name, f.blob));
+    zip.generateAsync({type:"blob"}).then(c => saveAs(c, `Truyen_Export_${Date.now()}.zip`));
+}
+function deleteBatch() {
+    const selected = files.filter(f => f.selected);
+    if(!selected.length) return showToast('⚠️ Chưa chọn file');
+    if(confirm(`Xóa ${selected.length} file đã chọn?`)) {
+        files = files.filter(f => !f.selected);
+        renderAllLists();
+        els.selectAllSidebar.checked = false;
+        els.selectAllManager.checked = false;
+        showToast('Đã xóa xong');
+    }
+}
+
+// Start
 init();
