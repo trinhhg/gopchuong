@@ -1,5 +1,5 @@
 // CONFIG
-const DB_NAME = 'AutoPilotV23'; // Giữ nguyên DB
+const DB_NAME = 'AutoPilotV23'; 
 const DB_VERSION = 2;
 let db = null;
 let files = [];
@@ -21,36 +21,51 @@ const els = {
     btnNewFolder: document.getElementById('btnNewFolder'),
     btnDeleteFolder: document.getElementById('btnDeleteFolder'),
     searchInput: document.getElementById('searchInput'),
+    
+    // View Buttons
     btnViewFiles: document.getElementById('btnViewFiles'),
     btnViewHistory: document.getElementById('btnViewHistory'),
     btnViewChecklist: document.getElementById('btnViewChecklist'),
+    
+    // View Containers
     viewManager: document.getElementById('viewManager'),
     viewHistory: document.getElementById('viewHistory'),
     viewChecklist: document.getElementById('viewChecklist'),
+    
+    // Manager
     fileGrid: document.getElementById('fileGrid'),
     fileCount: document.getElementById('fileCount'),
     selectAll: document.getElementById('selectAll'),
     btnDownloadBatch: document.getElementById('btnDownloadBatch'),
     btnDownloadDirect: document.getElementById('btnDownloadDirect'),
     btnDeleteBatch: document.getElementById('btnDeleteBatch'),
+    
+    // History
     historyFilter: document.getElementById('historyFilter'),
     historyTableBody: document.getElementById('historyTableBody'),
     emptyHistory: document.getElementById('emptyHistory'),
     btnClearHistory: document.getElementById('btnClearHistory'),
+    
+    // Checklist
     checklistBody: document.getElementById('checklistBody'),
     btnClearChecklist: document.getElementById('btnClearChecklist'),
     progCount: document.getElementById('progCount'),
     progBar: document.getElementById('progBar'),
     btnImportChecklist: document.getElementById('btnImportChecklist'),
     checklistInput: document.getElementById('checklistInput'),
+    
+    // Logic Inputs
     chapterTitle: document.getElementById('chapterTitle'),
     autoGroup: document.getElementById('autoGroup'),
     btnMerge: document.getElementById('btnMerge'),
     editor: document.getElementById('editor'),
+    
+    // Preview Modal
     previewModal: document.getElementById('previewModal'),
     previewTitle: document.getElementById('previewTitle'),
     previewDocHeader: document.getElementById('previewDocHeader'),
     previewBody: document.getElementById('previewBody'),
+    
     toast: document.getElementById('toast')
 };
 
@@ -122,7 +137,6 @@ function renderHistory() {
 async function init() {
     await initDB();
     
-    // Đánh dấu trạng thái rảnh ban đầu để Tampermonkey không spam
     localStorage.setItem('is_merging_busy', 'false');
 
     els.btnNewFolder.onclick = createFolder;
@@ -150,13 +164,13 @@ async function init() {
             currentList.sort((a,b) => a.num - b.num);
             checklists[currentFolderId] = currentList;
             saveDB('checklists', {folderId: currentFolderId, list: currentList});
-            toast(`Đã nhập ${newItems.length} mục vào danh sách!`);
+            toast(`Đã nhập ${newItems.length} mục!`);
             renderChecklist(); switchView('checklist');
         } catch(e) { console.error(e); toast("Lỗi nhập danh sách"); }
     };
 
     els.btnClearChecklist.onclick = () => {
-        if(confirm("Xóa danh sách theo dõi?")) {
+        if(confirm("Xóa danh sách?")) {
             delete checklists[currentFolderId];
             delDB('checklists', currentFolderId);
             renderChecklist();
@@ -173,17 +187,16 @@ async function init() {
     els.btnDownloadDirect.onclick = downloadBatchDirect;
     els.btnDeleteBatch.onclick = deleteBatch;
     els.btnClearHistory.onclick = () => {
-        if(confirm("Xóa toàn bộ lịch sử?")) { historyLogs=[]; clearStore('history'); renderHistory(); toast("Đã xóa lịch sử"); }
+        if(confirm("Xóa lịch sử?")) { historyLogs=[]; clearStore('history'); renderHistory(); toast("Đã xóa lịch sử"); }
     };
 
-    // QUEUE SYSTEM TRIGGER
     els.btnMerge.onclick = () => {
         const payload = {
             title: els.chapterTitle.value,
             content: els.editor.value,
             autoGroup: els.autoGroup.checked
         };
-        els.editor.value = ''; // Clear input ngay
+        els.editor.value = ''; 
         mergeQueue.push(payload);
         processQueue();
     };
@@ -221,37 +234,29 @@ async function processQueue() {
     }
 }
 
-// --- MERGE LOGIC (Updated Regex) ---
+// --- MERGE LOGIC ---
 async function performMerge(task) {
     const { title: inputTitle, content, autoGroup } = task;
     if(!content.trim()) return;
 
-    // 1. Phân tích tên chương để lấy số và TITLE
-    // Regex bắt: (Chương/Chapter) (Số) (.Số con)? (Phần còn lại là Title)
-    // Ví dụ: "Chương 1.1: Ngôi nhà" -> Main=1, Sub=1, Title=": Ngôi nhà"
+    // Phân tích tên: Lấy cả Số và Tên
     const groupMatch = inputTitle.match(/(?:Chương|Chapter|Hồi)\s*(\d+)(?:\.\d+)?(.*)/i);
-    
-    let fileName;
-    let headerInDoc;
+    let fileName, headerInDoc;
 
     if (autoGroup && groupMatch) {
         const mainNum = groupMatch[1]; 
-        const titleSuffix = groupMatch[2] ? groupMatch[2].trim() : ""; // Lấy phần đuôi (vd: ": Ngôi nhà")
+        const titleSuffix = groupMatch[2] ? groupMatch[2].trim() : "";
         
-        // Tên file gốc (cho mục đích lưu trữ và tìm kiếm)
-        // Tạo header có chứa cả tên chương: "Chương 1: Ngôi nhà"
         let baseName = `Chương ${mainNum}`;
-        if(titleSuffix) baseName += ` ${titleSuffix}`;
+        if(titleSuffix) baseName += ` ${titleSuffix}`; // "Chương 1 Ngôi nhà"
         
-        // Chuẩn hóa tên file (xóa ký tự cấm của Window nhưng giữ lại tên)
-        // Thay dấu : bằng - cho an toàn
-        let safeFileName = baseName.replace(/[:*?"<>|]/g, " -").replace(/\s+-\s+/, " - "); 
+        // Tên file để lưu DB
+        let safeFileName = baseName.replace(/[:*?"<>|]/g, " -").replace(/\s+-\s+/, " - ");
         fileName = `${safeFileName}.docx`;
         
-        // Header trong file Word thì giữ nguyên dấu :
+        // Header trong file Word (Giữ nguyên dấu :)
         headerInDoc = baseName.replace(/\s+:/, ":"); 
     } else {
-        // Nếu không gộp hoặc không khớp regex thì dùng tên gốc
         let safeName = inputTitle.replace(/[:*?"<>|]/g, " -").trim();
         fileName = `${safeName}.docx`;
         headerInDoc = inputTitle;
@@ -282,8 +287,7 @@ async function performMerge(task) {
         let allText = "";
         targetFile.segments.forEach(seg => { allText += seg.lines.join('\n') + '\n'; });
 
-        // Update header nếu cần (để đảm bảo title mới nhất được áp dụng nếu file được tạo từ 1.1)
-        // Nhưng thường ta muốn giữ Header của file gốc. Ở đây ta ưu tiên Header từ input nếu file chưa có header chuẩn
+        // Giữ lại Header chuẩn nếu có
         if(!targetFile.headerInDoc || targetFile.headerInDoc.includes("Chương Mới")) {
             targetFile.headerInDoc = headerInDoc;
         }
@@ -293,12 +297,11 @@ async function performMerge(task) {
         targetFile.blob = await generateDocxFromSegments(targetFile.headerInDoc, targetFile.segments);
         saveDB('files', targetFile);
     } else {
-        // TẠO MỚI
-        const wc = countWords(headerInDoc + " " + content); // Tính cả header
+        const wc = countWords(headerInDoc + " " + content);
         targetFile = {
             id: Date.now(), name: fileName, folderId: currentFolderId,
             segments: [segment],
-            headerInDoc: headerInDoc, // Header có Title
+            headerInDoc: headerInDoc,
             wordCount: wc, timestamp: Date.now(), selected: false
         };
         targetFile.blob = await generateDocxFromSegments(headerInDoc, targetFile.segments);
@@ -309,8 +312,6 @@ async function performMerge(task) {
         addToLog(`Gộp thêm: ${inputTitle}`, 'success');
     }
 
-    // Auto update UI (increment title input) for next F2 if needed
-    // Logic này chỉ để hiển thị bên UI, không ảnh hưởng F2 từ Tamper
     const numMatch = inputTitle.match(/(\d+)(\.(\d+))?/);
     if(numMatch) {
         if(numMatch[2]) els.chapterTitle.value = inputTitle.replace(numMatch[0], `${numMatch[1]}.${parseInt(numMatch[3])+1}`);
@@ -321,7 +322,7 @@ async function performMerge(task) {
     if (currentView === 'checklist') renderChecklist();
 }
 
-// --- VIEW SWITCHING ---
+// --- VIEW SWITCH ---
 function switchView(view) {
     currentView = view;
     [els.btnViewFiles, els.btnViewHistory, els.btnViewChecklist].forEach(b => b.classList.remove('active'));
@@ -339,7 +340,7 @@ function switchView(view) {
     }
 }
 
-// --- CHECKLIST RENDER ---
+// --- CHECKLIST ---
 function renderChecklist() {
     const list = checklists[currentFolderId] || [];
     const currentFiles = files.filter(f => f.folderId === currentFolderId);
@@ -360,7 +361,6 @@ function renderChecklist() {
         list.forEach(item => {
             const isDone = doneChapters.has(item.num);
             if(isDone) doneCount++;
-            
             const div = document.createElement('div');
             div.className = `cl-item ${isDone ? 'done' : ''}`;
             div.innerHTML = `
@@ -378,7 +378,7 @@ function renderChecklist() {
     els.progBar.style.width = `${percent}%`;
 }
 
-// --- OTHER UTILS ---
+// --- UTILS ---
 function renderFolders() {
     els.folderSelect.innerHTML = '';
     folders.forEach(f => {
@@ -391,7 +391,42 @@ function renderFolders() {
 function createFolder() { const n = prompt("Tên:"); if(n) { const f = {id: Date.now().toString(), name: n}; folders.push(f); saveDB('folders', f); currentFolderId = f.id; renderFolders(); renderFiles(); switchView(currentView); } }
 function deleteCurrentFolder() { if(currentFolderId === 'root') return toast("Lỗi: Root"); if(confirm("Xóa?")) { files.filter(f=>f.folderId===currentFolderId).forEach(f=>delDB('files',f.id)); files = files.filter(f=>f.folderId!==currentFolderId); delDB('folders', currentFolderId); folders = folders.filter(f=>f.id!==currentFolderId); currentFolderId = 'root'; renderFolders(); renderFiles(); switchView(currentView); } }
 function getFilteredFiles() { let list = files.filter(f => f.folderId === currentFolderId); if(currentView === 'manager') { const keyword = els.searchInput.value.toLowerCase().trim(); if(keyword) list = list.filter(f => f.name.toLowerCase().includes(keyword)); } list.sort((a,b) => getChapterNum(a.name) - getChapterNum(b.name)); return list; }
-function renderFiles() { const list = getFilteredFiles(); els.fileCount.innerText = list.length; els.fileGrid.innerHTML = ''; list.forEach(f => { const card = document.createElement('div'); card.className = `file-card ${f.selected ? 'selected' : ''}`; card.onclick = (e) => { if(e.target.closest('.card-actions')||e.target.closest('.card-body')) return; f.selected = !f.selected; renderFiles(); }; card.innerHTML = ` <div class="card-header"><input type="checkbox" class="card-chk" ${f.selected?'checked':''}><div class="card-icon">📄</div></div> <div class="card-body" title="Xem"><div class="file-name">${f.name}</div><div class="file-info"><span class="tag-wc">${f.wordCount} words</span></div></div> <div class="card-actions"><button class="btn-small view" onclick="event.stopPropagation(); openPreview(${f.id})">👁 Xem</button><button class="btn-small del" onclick="event.stopPropagation(); deleteOne(${f.id})">🗑 Xóa</button></div> `; const chk = card.querySelector('.card-chk'); chk.onclick=e=>e.stopPropagation(); chk.onchange=()=>{f.selected=chk.checked;renderFiles();}; card.querySelector('.card-body').onclick=e=>{e.stopPropagation();openPreview(f.id);}; els.fileGrid.appendChild(card); }); }
+
+// --- RENDER FILES (FIXED: HIỂN THỊ RÚT GỌN) ---
+function renderFiles() {
+    const list = getFilteredFiles();
+    els.fileCount.innerText = list.length;
+    els.fileGrid.innerHTML = '';
+    list.forEach(f => {
+        // --- LOGIC HIỂN THỊ TÊN TRÊN DASHBOARD ---
+        // Lấy tên đầy đủ từ DB (Vd: "Chương 1 - Ngôi nhà.docx")
+        let displayName = f.name.replace(/\.docx$/i, '');
+        
+        // Regex tìm mẫu "Chương X" (và bỏ qua phần tiêu đề phía sau)
+        // Mẫu: Bắt đầu bằng (Chương/Chapter) + Khoảng trắng + Số (1 hoặc 1.1)
+        const shortMatch = displayName.match(/^(Chương|Chapter|Hồi)\s+(\d+(\.\d+)?)/i);
+        
+        if (shortMatch) {
+            // Nếu khớp, chỉ hiển thị "Chương X" cho gọn
+            displayName = `${shortMatch[1]} ${shortMatch[2]}`;
+        }
+        // Nếu không khớp (tên file lạ), giữ nguyên tên gốc
+        // ------------------------------------------
+
+        const card = document.createElement('div');
+        card.className = `file-card ${f.selected ? 'selected' : ''}`;
+        card.onclick = (e) => { if(e.target.closest('.card-actions')||e.target.closest('.card-body')) return; f.selected = !f.selected; renderFiles(); };
+        card.innerHTML = `
+            <div class="card-header"><input type="checkbox" class="card-chk" ${f.selected?'checked':''}><div class="card-icon">📄</div></div>
+            <div class="card-body" title="${f.name}"> <div class="file-name">${displayName}</div>
+                <div class="file-info"><span class="tag-wc">${f.wordCount} words</span></div>
+            </div>
+            <div class="card-actions"><button class="btn-small view" onclick="event.stopPropagation(); openPreview(${f.id})">👁 Xem</button><button class="btn-small del" onclick="event.stopPropagation(); deleteOne(${f.id})">🗑 Xóa</button></div>
+        `;
+        const chk = card.querySelector('.card-chk'); chk.onclick=e=>e.stopPropagation(); chk.onchange=()=>{f.selected=chk.checked;renderFiles();}; card.querySelector('.card-body').onclick=e=>{e.stopPropagation();openPreview(f.id);}; els.fileGrid.appendChild(card);
+    });
+}
+
 function generateDocxFromSegments(mainHeader, segments) { const { Document, Packer, Paragraph, TextRun } = docx; const children = []; children.push(new Paragraph({children: [new TextRun({text: mainHeader, font: "Calibri", size: 32, color: "000000"})], spacing: {after: 240}})); children.push(new Paragraph({text: "", spacing: {after: 240}})); segments.forEach(seg => { seg.lines.forEach(line => { children.push(new Paragraph({children: [new TextRun({text: line, font: "Calibri", size: 32, color: "000000"})], spacing: {after: 240}})); }); }); return Packer.toBlob(new Document({sections:[{children}]})); }
 window.openPreview = (id) => { const f = files.find(x=>x.id===id); if(!f) return; previewFileId = id; const list = getFilteredFiles(); const idx = list.findIndex(x=>x.id===id); els.previewTitle.innerText = f.name; document.querySelector('.modal-nav span').innerText = `${idx+1}/${list.length}`; els.previewDocHeader.innerText = f.headerInDoc; let content = ""; if(f.segments) f.segments.forEach(seg => seg.lines.forEach(l => content += `<p>${l}</p>`)); else content = f.rawContent.split('\n').map(l=>`<p>${l}</p>`).join(''); els.previewBody.innerHTML = content; els.previewModal.classList.add('show'); };
 window.closePreview = () => els.previewModal.classList.remove('show');
