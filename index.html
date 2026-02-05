@@ -3,110 +3,80 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Writer Studio V11</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:wght@300;400;700&display=swap" rel="stylesheet">
+    <title>Writer Core V12</title>
     <link rel="stylesheet" href="index.css">
-    
     <script src="https://unpkg.com/docx@7.1.0/build/index.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
 
-<div class="app-container">
-    <aside class="sidebar" id="sidebar">
-        <div class="sidebar-header">
-            <div class="brand">
-                <span class="icon">📚</span>
-                <span class="text">Studio V11</span>
+<div class="glass-container">
+    <aside class="sidebar">
+        <div class="sidebar-head">
+            <div class="brand">🚀 WRITER CORE</div>
+            <div class="folder-control">
+                <select id="folderSelect" class="folder-select"></select>
+                <button id="btnNewFolder" class="btn-icon" title="Thêm thư mục">+</button>
+                <button id="btnDeleteFolder" class="btn-icon danger" title="Xóa thư mục">-</button>
             </div>
         </div>
 
-        <div class="sidebar-nav">
-            <div class="nav-section">
-                <div class="nav-title">THƯ VIỆN</div>
-                <div id="folderList" class="folder-list">
-                    </div>
-                <button class="btn-new-folder" id="btnNewFolder">+ Thư mục mới</button>
+        <div class="file-list-area">
+            <div class="list-tools">
+                <label class="chk-wrap">
+                    <input type="checkbox" id="selectAll">
+                    <span>Tất cả</span>
+                </label>
+                <span class="file-counter"><b id="fileCount">0</b> files</span>
             </div>
-            
-            <div class="nav-section">
-                <div class="nav-title">FILE TRONG THƯ MỤC (<span id="fileCount">0</span>)</div>
-                <div class="sidebar-tools">
-                    <label class="select-all-wrap">
-                        <input type="checkbox" id="selectAllSidebar">
-                        <span>Chọn tất cả</span>
-                    </label>
-                    <button class="btn-icon-small" id="btnDownloadAll" title="Tải Zip">⬇</button>
-                    <button class="btn-icon-small danger" id="btnDeleteSelected" title="Xóa chọn">🗑</button>
+            <div id="fileList" class="file-list-scroll">
                 </div>
-                <div id="sidebarFileList" class="file-list-scroll">
-                    </div>
-            </div>
+        </div>
+
+        <div class="sidebar-foot">
+            <button id="btnDownloadBatch" class="btn-glass primary">📦 Tải ZIP đã chọn</button>
+            <button id="btnDeleteBatch" class="btn-glass danger">🗑 Xóa đã chọn</button>
         </div>
     </aside>
 
-    <main class="main-content">
-        <header class="top-header">
-            <div class="left-header">
-                <button class="btn-toggle" id="toggleSidebar">☰</button>
-                <div class="breadcrumbs" id="breadcrumb">📁 Gốc</div>
+    <main class="workspace">
+        <header class="top-bar">
+            <div class="input-group">
+                <span class="label">ĐANG NHẬN:</span>
+                <input type="text" id="chapterTitle" value="Chương 1" class="title-input">
             </div>
-            <div class="tabs">
-                <button class="tab-btn active" data-view="editor">📝 Soạn thảo</button>
-                <button class="tab-btn" data-view="manager">📂 Quản lý</button>
+            <div class="status-pill">
+                <input type="checkbox" id="autoGroup" checked>
+                <label for="autoGroup">Gộp thông minh (1.x ➜ 1)</label>
+            </div>
+            <div class="actions">
+                <button id="btnClearOnly" class="btn-text">Làm sạch</button>
+                <button id="btnMerge" class="btn-action">⚡ Gộp & Lưu</button>
             </div>
         </header>
 
-        <div id="view-editor" class="view-panel active">
-            <div class="editor-container">
-                <div class="editor-header">
-                    <div class="input-group">
-                        <label>Tiêu đề chương</label>
-                        <input type="text" id="chapterTitle" value="Chương 1" placeholder="Nhập tên chương...">
-                    </div>
-                    <div class="controls">
-                        <label class="switch">
-                            <input type="checkbox" id="autoGroup" checked>
-                            <span class="slider"></span>
-                            <span class="label">Gộp thông minh (1.x -> 1)</span>
-                        </label>
-                        <button class="btn-secondary" id="btnClearOnly">Làm sạch</button>
-                        <button class="btn-primary" id="btnMerge">⚡ Gộp & Lưu</button>
-                    </div>
-                </div>
-                <div class="editor-body">
-                    <textarea id="editor" placeholder="Dữ liệu từ Auto Click sẽ hiện ở đây..."></textarea>
-                </div>
-            </div>
-        </div>
-
-        <div id="view-manager" class="view-panel">
-            <div class="manager-container">
-                <div class="manager-toolbar">
-                    <h2>Danh sách tập tin</h2>
-                    </div>
-                <div class="file-grid" id="managerGrid">
-                    </div>
+        <div class="content-stage">
+            <div class="paper-preview">
+                <div class="paper-header" id="liveHeader">Tiêu đề sẽ hiện ở đây...</div>
+                <textarea id="editor" placeholder="Chờ dữ liệu từ Auto Click..."></textarea>
             </div>
         </div>
     </main>
 </div>
 
-<div id="readerModal" class="reader-modal">
-    <div class="reader-toolbar">
-        <button class="btn-close-reader" onclick="closeReader()">✕ Đóng</button>
-        <h3 id="readerTitle">Tiêu đề file</h3>
-        <div class="reader-nav-controls">
-            <button class="nav-arrow" onclick="prevChapter()" title="Chương trước (←)">❮</button>
-            <span id="currentChapterNum">1/10</span>
-            <button class="nav-arrow" onclick="nextChapter()" title="Chương sau (→)">❯</button>
+<div id="previewModal" class="modal-overlay">
+    <div class="modal-container">
+        <div class="modal-top">
+            <h3 id="previewModalTitle">Xem trước file</h3>
+            <button onclick="closePreview()" class="btn-close">✕</button>
         </div>
-    </div>
-    <div class="reader-content-wrapper">
-        <div class="paper-sheet">
-            <h1 id="readerHeader">Header</h1>
-            <div id="readerBody">Content...</div>
+        <div class="modal-scroll-area">
+            <div class="page-a4">
+                <h1 id="previewDocHeader" class="doc-h1">Header</h1>
+                <div class="doc-spacer"></div> <div id="previewBody" class="doc-body">Content</div>
+            </div>
         </div>
     </div>
 </div>
