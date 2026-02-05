@@ -13,14 +13,10 @@ function countWords(text) {
     return text.trim().split(/\s+/).length;
 }
 function getChapterNum(title) {
-    // Regex lấy số: "Chương 1.2" -> 1.2
     const match = title.match(/(?:Chương|Chapter|Hồi)\s*(\d+(\.\d+)?)/i);
     return match ? parseFloat(match[1]) : 999999;
 }
-
-// Hàm chuẩn hóa nội dung: Xóa dòng trống thừa, tách dòng chuẩn
 function cleanContent(text) {
-    // Tách dòng, trim, bỏ dòng rỗng
     return text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 }
 
@@ -47,7 +43,6 @@ const els = {
     previewTitle: document.getElementById('previewTitle'),
     previewDocHeader: document.getElementById('previewDocHeader'),
     previewBody: document.getElementById('previewBody'),
-    previewCounter: document.getElementById('previewCounter'),
     
     toast: document.getElementById('toast')
 };
@@ -92,7 +87,7 @@ async function init() {
         renderFiles();
     };
     
-    els.searchInput.oninput = renderFiles; // Search realtime
+    els.searchInput.oninput = renderFiles;
 
     els.btnDownloadBatch.onclick = downloadBatchZip;
     els.btnDownloadDirect.onclick = downloadBatchDirect;
@@ -100,7 +95,6 @@ async function init() {
 
     els.btnMerge.onclick = () => merge(true);
     
-    // Keyboard Nav Preview
     document.addEventListener('keydown', e => {
         if(els.previewModal.classList.contains('show')) {
             if(e.key === 'ArrowLeft') prevChapter();
@@ -144,7 +138,7 @@ function deleteCurrentFolder() {
     }
 }
 
-// --- MERGE LOGIC (CLEAN & SORTED) ---
+// --- MERGE LOGIC ---
 async function merge(autoClear) {
     const content = els.editor.value;
     if(!content.trim()) return;
@@ -153,13 +147,12 @@ async function merge(autoClear) {
     let safeName = inputTitle.replace(/[:*?"<>|]/g, " -").trim();
     let fileName = `${safeName}.docx`;
     
-    // Tách dòng sạch sẽ ngay từ đầu
     const lines = cleanContent(content);
     if(lines.length === 0) return;
 
     let segment = {
         idSort: getChapterNum(inputTitle) || 99999,
-        lines: lines, // Lưu mảng dòng đã sạch
+        lines: lines,
         header: inputTitle
     };
 
@@ -173,11 +166,8 @@ async function merge(autoClear) {
     if(targetFile) {
         if(!targetFile.segments) targetFile.segments = [];
         targetFile.segments.push(segment);
-        // SORT segments theo số chương (tăng dần)
         targetFile.segments.sort((a,b) => a.idSort - b.idSort);
         
-        // Rebuild Text for Preview & Count
-        // Nối các segment lại, mỗi segment cách nhau 1 dòng trắng logic
         let allText = "";
         targetFile.segments.forEach(seg => {
             allText += seg.lines.join('\n') + '\n';
@@ -204,7 +194,6 @@ async function merge(autoClear) {
         toast(`Đã lưu: ${fileName}`);
     }
 
-    // Auto next
     const numMatch = inputTitle.match(/(\d+)(\.(\d+))?/);
     if(numMatch) {
         if(numMatch[2]) els.chapterTitle.value = inputTitle.replace(numMatch[0], `${numMatch[1]}.${parseInt(numMatch[3])+1}`);
@@ -219,20 +208,17 @@ function generateDocxFromSegments(mainHeader, segments) {
     const { Document, Packer, Paragraph, TextRun } = docx;
     const children = [];
 
-    // Header Chính (Chương X)
     children.push(new Paragraph({
         children: [new TextRun({text: mainHeader, font: "Calibri", size: 32, color: "000000"})],
         spacing: {after: 240}
     }));
-    // Dòng trắng cách biệt đầu tiên
     children.push(new Paragraph({text: "", spacing: {after: 240}}));
 
-    // Duyệt qua từng segment
     segments.forEach(seg => {
         seg.lines.forEach(line => {
             children.push(new Paragraph({
                 children: [new TextRun({text: line, font: "Calibri", size: 32, color: "000000"})],
-                spacing: {after: 240} // Cách dòng chuẩn (12pt spacing)
+                spacing: {after: 240}
             }));
         });
     });
@@ -243,14 +229,10 @@ function generateDocxFromSegments(mainHeader, segments) {
 // --- RENDER & SORT ---
 function getFilteredFiles() {
     let list = files.filter(f => f.folderId === currentFolderId);
-    
-    // Search filter
-    const keyword = els.searchInput.value.toLowerCase().trim();
+    const keyword = document.getElementById('searchInput').value.toLowerCase().trim(); // Fix searchInput ref
     if(keyword) {
         list = list.filter(f => f.name.toLowerCase().includes(keyword));
     }
-
-    // Sort by Chapter Number (ALWAYS)
     list.sort((a,b) => getChapterNum(a.name) - getChapterNum(b.name));
     return list;
 }
@@ -264,14 +246,13 @@ function renderFiles() {
         const card = document.createElement('div');
         card.className = `file-card ${f.selected ? 'selected' : ''}`;
         
-        // Sự kiện click toàn thẻ để chọn
         card.onclick = (e) => {
-            // Nếu click vào nút actions thì ko toggle
             if(e.target.closest('.card-actions') || e.target.closest('.card-body')) return;
             f.selected = !f.selected;
             renderFiles();
         };
 
+        // --- ĐỔI NÚT DOWNLOAD THÀNH PREVIEW Ở ĐÂY ---
         card.innerHTML = `
             <div class="card-header">
                 <input type="checkbox" class="card-chk" ${f.selected?'checked':''}>
@@ -284,12 +265,16 @@ function renderFiles() {
                 </div>
             </div>
             <div class="card-actions">
-                <button class="btn-small" onclick="downloadOne(${f.id})">Tải Docx</button>
-                <button class="btn-small del" onclick="deleteOne(${f.id})">Xóa</button>
+                <button class="btn-small view" onclick="event.stopPropagation(); openPreview(${f.id})">👁 Xem</button>
+                <button class="btn-small del" onclick="event.stopPropagation(); deleteOne(${f.id})">🗑 Xóa</button>
             </div>
         `;
         
-        // Add event cho nút Xem trước (body)
+        const chk = card.querySelector('.card-chk');
+        chk.onclick = (e) => e.stopPropagation();
+        chk.onchange = () => { f.selected = chk.checked; renderFiles(); };
+        
+        // Thêm event click vào body thẻ cũng mở preview (cho tiện)
         const body = card.querySelector('.card-body');
         body.onclick = (e) => { e.stopPropagation(); openPreview(f.id); };
 
@@ -298,7 +283,43 @@ function renderFiles() {
 }
 
 // --- ACTIONS ---
-window.downloadOne = (id) => { const f=files.find(x=>x.id===id); if(f&&f.blob) saveAs(f.blob, f.name); }
+window.openPreview = (id) => {
+    const f = files.find(x=>x.id===id);
+    if(!f) return;
+    previewFileId = id;
+    
+    const list = getFilteredFiles();
+    const idx = list.findIndex(x=>x.id===id);
+    
+    els.previewTitle.innerText = f.name;
+    document.querySelector('.modal-nav span').innerText = `${idx + 1}/${list.length}`; // Fix ID counter
+    els.previewDocHeader.innerText = f.headerInDoc;
+    
+    let content = "";
+    if(f.segments) {
+        f.segments.forEach(seg => {
+            seg.lines.forEach(line => {
+                content += `<p>${line}</p>`;
+            });
+        });
+    } else {
+        content = f.rawContent.split('\n').map(l=>`<p>${l}</p>`).join('');
+    }
+    
+    els.previewBody.innerHTML = content;
+    els.previewModal.classList.add('show');
+}
+window.closePreview = () => els.previewModal.classList.remove('show');
+window.prevChapter = () => navChapter(-1);
+window.nextChapter = () => navChapter(1);
+
+function navChapter(dir) {
+    const list = getFilteredFiles();
+    const idx = list.findIndex(x=>x.id===previewFileId);
+    if(idx !== -1 && list[idx+dir]) openPreview(list[idx+dir].id);
+    else toast(dir>0 ? "Hết danh sách" : "Đầu danh sách");
+}
+
 window.deleteOne = (id) => { if(confirm('Xóa?')) { delDB('files', id); files=files.filter(f=>f.id!==id); renderFiles(); } }
 
 function deleteBatch() {
@@ -332,46 +353,5 @@ async function downloadBatchDirect() {
 }
 
 function toast(m) { els.toast.innerText = m; els.toast.classList.add('show'); setTimeout(()=>els.toast.classList.remove('show'), 2000); }
-
-// --- PREVIEW NAV ---
-window.openPreview = (id) => {
-    const f = files.find(x=>x.id===id);
-    if(!f) return;
-    previewFileId = id;
-    
-    // Find index logic
-    const list = getFilteredFiles();
-    const idx = list.findIndex(x=>x.id===id);
-    
-    els.previewTitle.innerText = f.name;
-    els.previewCounter.innerText = `${idx + 1}/${list.length}`;
-    els.previewDocHeader.innerText = f.headerInDoc;
-    
-    // Render text with spacing logic for preview
-    let content = "";
-    if(f.segments) {
-        f.segments.forEach(seg => {
-            seg.lines.forEach(line => {
-                content += `<p>${line}</p>`; // Mỗi line là 1 thẻ p để margin
-            });
-        });
-    } else {
-        // Fallback file cũ
-        content = f.rawContent.split('\n').map(l=>`<p>${l}</p>`).join('');
-    }
-    
-    els.previewBody.innerHTML = content;
-    els.previewModal.classList.add('show');
-}
-window.closePreview = () => els.previewModal.classList.remove('show');
-window.prevChapter = () => navChapter(-1);
-window.nextChapter = () => navChapter(1);
-
-function navChapter(dir) {
-    const list = getFilteredFiles();
-    const idx = list.findIndex(x=>x.id===previewFileId);
-    if(idx !== -1 && list[idx+dir]) openPreview(list[idx+dir].id);
-    else toast(dir>0 ? "Hết danh sách" : "Đầu danh sách");
-}
 
 init();
