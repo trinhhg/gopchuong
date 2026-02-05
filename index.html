@@ -3,85 +3,85 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Writer Core V12</title>
+    <title>Writer Studio V13</title>
     <link rel="stylesheet" href="index.css">
     <script src="https://unpkg.com/docx@7.1.0/build/index.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Merriweather:wght@300;400;700&display=swap" rel="stylesheet">
 </head>
 <body>
 
-<div class="glass-container">
+<div class="dashboard">
     <aside class="sidebar">
-        <div class="sidebar-head">
-            <div class="brand">🚀 WRITER CORE</div>
-            <div class="folder-control">
-                <select id="folderSelect" class="folder-select"></select>
-                <button id="btnNewFolder" class="btn-icon" title="Thêm thư mục">+</button>
-                <button id="btnDeleteFolder" class="btn-icon danger" title="Xóa thư mục">-</button>
-            </div>
+        <div class="brand">TYPE MASTER V13</div>
+        
+        <div class="folder-section">
+            <div class="section-title">THƯ MỤC</div>
+            <div id="folderList" class="folder-list"></div>
+            <button id="btnNewFolder" class="btn-block">+ Tạo mới</button>
         </div>
 
-        <div class="file-list-area">
-            <div class="list-tools">
-                <label class="chk-wrap">
-                    <input type="checkbox" id="selectAll">
-                    <span>Tất cả</span>
-                </label>
-                <span class="file-counter"><b id="fileCount">0</b> files</span>
+        <div class="file-section">
+            <div class="section-title">
+                FILE (<span id="fileCount">0</span>)
+                <label class="mini-check"><input type="checkbox" id="selectAllSidebar"> All</label>
             </div>
-            <div id="fileList" class="file-list-scroll">
-                </div>
+            <div id="fileListSidebar" class="file-list-compact"></div>
         </div>
 
-        <div class="sidebar-foot">
-            <button id="btnDownloadBatch" class="btn-glass primary">📦 Tải ZIP đã chọn</button>
-            <button id="btnDeleteBatch" class="btn-glass danger">🗑 Xóa đã chọn</button>
+        <div class="sidebar-actions">
+            <button id="btnDownloadBatch" class="btn-primary-block">Tải ZIP</button>
+            <button id="btnDeleteBatch" class="btn-danger-block">Xóa</button>
         </div>
     </aside>
 
     <main class="workspace">
         <header class="top-bar">
-            <div class="input-group">
-                <span class="label">ĐANG NHẬN:</span>
-                <input type="text" id="chapterTitle" value="Chương 1" class="title-input">
+            <div class="input-area">
+                <input type="text" id="chapterTitle" value="Chương 1" class="input-title" placeholder="Tiêu đề chương...">
+                <div class="toggle-group">
+                    <input type="checkbox" id="autoGroup" checked>
+                    <label for="autoGroup">Gộp 1.x vào 1</label>
+                </div>
             </div>
-            <div class="status-pill">
-                <input type="checkbox" id="autoGroup" checked>
-                <label for="autoGroup">Gộp thông minh (1.x ➜ 1)</label>
-            </div>
-            <div class="actions">
-                <button id="btnClearOnly" class="btn-text">Làm sạch</button>
-                <button id="btnMerge" class="btn-action">⚡ Gộp & Lưu</button>
+            <div class="actions-area">
+                <button id="btnClearOnly" class="btn-text">Reset</button>
+                <button id="btnMerge" class="btn-action">XỬ LÝ</button>
             </div>
         </header>
 
-        <div class="content-stage">
-            <div class="paper-preview">
-                <div class="paper-header" id="liveHeader">Tiêu đề sẽ hiện ở đây...</div>
-                <textarea id="editor" placeholder="Chờ dữ liệu từ Auto Click..."></textarea>
-            </div>
+        <div class="content-area">
+            <div class="manager-grid" id="managerGrid">
+                </div>
+            <textarea id="editor" class="hidden-editor"></textarea>
         </div>
     </main>
 </div>
 
-<div id="previewModal" class="modal-overlay">
-    <div class="modal-container">
-        <div class="modal-top">
-            <h3 id="previewModalTitle">Xem trước file</h3>
-            <button onclick="closePreview()" class="btn-close">✕</button>
+<div id="readerModal" class="reader-overlay">
+    <div class="reader-container">
+        <div class="reader-nav">
+            <button onclick="closeReader()" class="nav-btn close">✕ Thoát</button>
+            <div class="reader-info">
+                <span id="readerTitle">Tiêu đề</span>
+                <span id="readerProgress" class="page-num">1/10</span>
+            </div>
+            <div class="nav-arrows">
+                <button onclick="prevChapter()" class="nav-btn">❮ Trước</button>
+                <button onclick="nextChapter()" class="nav-btn">Sau ❯</button>
+            </div>
         </div>
-        <div class="modal-scroll-area">
-            <div class="page-a4">
-                <h1 id="previewDocHeader" class="doc-h1">Header</h1>
-                <div class="doc-spacer"></div> <div id="previewBody" class="doc-body">Content</div>
+        <div class="reader-viewport">
+            <div class="reader-paper">
+                <h1 id="readerHeader"></h1>
+                <div id="readerBody"></div>
             </div>
         </div>
     </div>
 </div>
 
-<div id="toast" class="toast">Thông báo</div>
+<div id="toast"></div>
 <script src="index.js"></script>
 </body>
 </html>
