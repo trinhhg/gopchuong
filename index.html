@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Auto Manager V15</title>
+    <title>Writer Core V16</title>
     <link rel="stylesheet" href="index.css">
     <script src="https://unpkg.com/docx@7.1.0/build/index.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Merriweather:wght@300;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
 
@@ -20,12 +20,17 @@
 
 <div class="dashboard">
     <header class="top-bar">
-        <div class="brand">📂 MANAGER V15</div>
+        <div class="brand">📂 MANAGER V16</div>
         
         <div class="folder-controls">
             <select id="folderSelect" class="folder-select"></select>
             <button id="btnNewFolder" class="btn-icon" title="Thêm thư mục">+</button>
             <button id="btnDeleteFolder" class="btn-icon danger" title="Xóa thư mục">-</button>
+        </div>
+
+        <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="searchInput" placeholder="Tìm tên file...">
         </div>
 
         <div class="settings">
@@ -60,7 +65,12 @@
     <div class="modal-window">
         <div class="modal-header">
             <h3 id="previewTitle">Tên File</h3>
-            <button onclick="closePreview()" class="btn-close">✕</button>
+            <div class="modal-nav">
+                <button onclick="prevChapter()" class="nav-btn" title="Chương trước (←)">❮</button>
+                <span id="previewCounter">1/1</span>
+                <button onclick="nextChapter()" class="nav-btn" title="Chương sau (→)">❯</button>
+            </div>
+            <button onclick="closePreview()" class="btn-close" title="Đóng (Esc)">✕</button>
         </div>
         <div class="modal-body">
             <div class="paper">
