@@ -1,14 +1,21 @@
-// --- DATABASE CONFIG (INDEXED DB) ---
+// --- DATABASE CONFIG ---
 const DB_NAME = 'DocxToolDB';
 const DB_VERSION = 1;
 let db = null;
 
-// --- STATE ---
 let files = []; 
 let folders = [];
-let currentFolderId = 'root'; // Thư mục hiện tại
+let currentFolderId = 'root';
 
-// --- DOM ELEMENTS ---
+// --- HÀM ĐẾM TỪ (CHUẨN MS WORD) ---
+function countWords(text) {
+    if (!text || text.trim() === '') return 0;
+    // MS Word đếm từ dựa trên khoảng trắng (whitespace)
+    // "Word-Word" là 1 từ. "Word, Word" là 2 từ.
+    // Regex này tách theo khoảng trắng (space, tab, xuống dòng)
+    return text.trim().split(/\s+/).length;
+}
+
 const els = {
     tabs: document.querySelectorAll('.tab-pill'),
     views: document.querySelectorAll('.view-content'),
@@ -22,101 +29,50 @@ const els = {
     btnDownloadAll: document.getElementById('btnDownloadAll'),
     btnDeleteSelected: document.getElementById('btnDeleteSelected'),
     btnNewFolder: document.getElementById('btnNewFolder'),
-    
     sidebarList: document.getElementById('sidebarList'),
     managerList: document.getElementById('managerList'),
     folderNav: document.getElementById('folderNav'),
     fileCount: document.getElementById('fileCount'),
-    
     selectAllSidebar: document.getElementById('selectAllSidebar'),
     selectAllManager: document.getElementById('selectAllManager'),
     toast: document.getElementById('toast'),
-    
     previewModal: document.getElementById('previewModal'),
     previewTitle: document.getElementById('previewTitle'),
     previewDocHeader: document.getElementById('previewDocHeader'),
     previewBody: document.getElementById('previewBody')
 };
 
-// --- INIT DATABASE ---
+// --- DB & INIT ---
 function initDB() {
     return new Promise((resolve, reject) => {
         const request = indexedDB.open(DB_NAME, DB_VERSION);
-        
-        request.onupgradeneeded = (event) => {
-            const db = event.target.result;
-            if (!db.objectStoreNames.contains('files')) {
-                db.createObjectStore('files', { keyPath: 'id' });
-            }
-            if (!db.objectStoreNames.contains('folders')) {
-                db.createObjectStore('folders', { keyPath: 'id' });
-            }
+        request.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains('files')) db.createObjectStore('files', { keyPath: 'id' });
+            if (!db.objectStoreNames.contains('folders')) db.createObjectStore('folders', { keyPath: 'id' });
         };
-
-        request.onsuccess = (event) => {
-            db = event.target.result;
-            loadFromDB().then(resolve);
-        };
-        request.onerror = (event) => reject('Lỗi DB');
+        request.onsuccess = (e) => { db = e.target.result; loadFromDB().then(resolve); };
+        request.onerror = () => reject('Lỗi DB');
     });
 }
-
 async function loadFromDB() {
-    // Load Files
     files = await getAllFromStore('files');
-    // Load Folders
     folders = await getAllFromStore('folders');
-    // Reset selected state
     files.forEach(f => f.selected = false);
     renderAll();
 }
-
-// --- HELPER DB ---
-function getAllFromStore(storeName) {
-    return new Promise((resolve) => {
-        const tx = db.transaction(storeName, 'readonly');
-        const store = tx.objectStore(storeName);
-        const req = store.getAll();
-        req.onsuccess = () => resolve(req.result || []);
+function getAllFromStore(name) {
+    return new Promise(r => { 
+        const req = db.transaction(name, 'readonly').objectStore(name).getAll();
+        req.onsuccess = () => r(req.result || []);
     });
 }
+function saveItemToDB(store, item) { const tx = db.transaction(store, 'readwrite'); tx.objectStore(store).put(item); }
+function deleteItemFromDB(store, id) { const tx = db.transaction(store, 'readwrite'); tx.objectStore(store).delete(id); }
 
-function saveFileToDB(file) {
-    const tx = db.transaction('files', 'readwrite');
-    tx.objectStore('files').put(file);
-}
-
-function deleteFileFromDB(id) {
-    const tx = db.transaction('files', 'readwrite');
-    tx.objectStore('files').delete(id);
-}
-
-function saveFolderToDB(folder) {
-    const tx = db.transaction('folders', 'readwrite');
-    tx.objectStore('folders').put(folder);
-}
-
-function deleteFolderFromDB(id) {
-    const tx = db.transaction('folders', 'readwrite');
-    tx.objectStore('folders').delete(id);
-}
-
-// --- LOGIC ĐẾM TỪ (CHUẨN WORD) ---
-function countWords(text) {
-    if (!text) return 0;
-    // Regex này bao gồm cả chữ cái có dấu tiếng Việt và số, loại bỏ ký tự đặc biệt
-    // Nó sát với MS Word nhất (Word đếm "abc," là 1 từ, "abc" là 1 từ)
-    const matches = text.trim().match(/[\p{L}\p{N}\-]+/gu);
-    return matches ? matches.length : 0;
-}
-
-// --- INIT APP ---
 async function init() {
-    await initDB(); // Đợi DB load xong mới chạy tiếp
-
+    await initDB();
     els.toggleSidebar.addEventListener('click', () => els.sidebar.classList.toggle('collapsed'));
-    
-    // Tab switching
     els.tabs.forEach(btn => {
         btn.addEventListener('click', () => {
             els.tabs.forEach(t => t.classList.remove('active'));
@@ -125,130 +81,104 @@ async function init() {
             document.getElementById(btn.dataset.tab).classList.add('active');
         });
     });
-
     els.btnMerge.addEventListener('click', () => merge(true));
     els.btnClearOnly.addEventListener('click', () => { els.editor.value = ''; showToast('Đã xóa trắng'); });
     els.btnNewFolder.addEventListener('click', createFolder);
-
-    // Select All
     const handleSelectAll = (checked) => {
-        const visibleFiles = files.filter(f => f.folderId === currentFolderId);
-        visibleFiles.forEach(f => f.selected = checked);
+        const visible = files.filter(f => f.folderId === currentFolderId);
+        visible.forEach(f => f.selected = checked);
         renderAll();
     };
     els.selectAllSidebar.addEventListener('change', (e) => handleSelectAll(e.target.checked));
     els.selectAllManager.addEventListener('change', (e) => handleSelectAll(e.target.checked));
-    
     els.btnDownloadAll.addEventListener('click', downloadBatch);
     els.btnDeleteSelected.addEventListener('click', deleteBatch);
 }
 
-// --- PREVIEW LOGIC (FIXED) ---
-window.openPreview = function(id) {
+// --- FOLDER & NAV ---
+function createFolder() {
+    const name = prompt("Tên thư mục mới:");
+    if (name) {
+        const f = { id: Date.now(), name: name };
+        folders.push(f);
+        saveItemToDB('folders', f);
+        renderAll();
+    }
+}
+window.enterFolder = (id) => { currentFolderId = id; renderAll(); }
+window.navigateToFolder = (id) => { currentFolderId = id; renderAll(); }
+
+// --- PREVIEW ---
+window.openPreview = (id) => {
     const f = files.find(x => x.id === id);
     if (!f) return;
-    
     els.previewTitle.innerText = f.name;
-    // Hiển thị Header y hệt như trong file Word sẽ tải về
-    els.previewDocHeader.innerText = f.headerInDoc; 
+    els.previewDocHeader.innerText = f.headerInDoc;
     els.previewBody.innerText = f.rawContent;
-    
     els.previewModal.classList.add('show');
 }
 window.closePreview = () => els.previewModal.classList.remove('show');
 
-// --- FOLDER LOGIC ---
-function createFolder() {
-    const name = prompt("Nhập tên thư mục mới:");
-    if (name) {
-        const folder = { id: Date.now(), name: name };
-        folders.push(folder);
-        saveFolderToDB(folder);
-        renderAll();
-    }
-}
-
-window.navigateToFolder = function(id) {
-    currentFolderId = id;
-    renderAll();
-}
-
-window.enterFolder = function(id) {
-    currentFolderId = id;
-    renderAll();
-}
-
-// --- MERGE LOGIC (CORE) ---
+// --- MERGE (QUAN TRỌNG) ---
 async function merge(autoClear) {
     const contentToAdd = els.editor.value;
-    if (!contentToAdd.trim()) return; 
+    if (!contentToAdd.trim()) return; // Không làm gì nếu rỗng
 
     const inputTitle = els.chapterTitle.value.trim() || "Chương Mới";
     
-    // 1. Chuẩn hóa tên file và tiêu đề
-    // Thay thế ký tự cấm filename
+    // 1. Chuẩn hóa tên file (thay : bằng -)
     let safeFileName = inputTitle.replace(/[:*?"<>|]/g, " -").trim();
     let fileName = `${safeFileName}.docx`;
-    let headerTitle = inputTitle; // Header mặc định là input
+    let headerTitle = inputTitle; 
 
-    // 2. Logic Gộp (Nếu bật checkbox)
+    // 2. Logic Gộp (Nếu bật)
     if (els.autoGroup.checked) {
+        // Regex tìm số chương. VD: "Chương 1.2" -> lấy số 1
         const match = inputTitle.match(/(?:Chương|Chapter|Hồi)\s*(\d+)/i);
         if (match) {
-            // Tên file gốc: "Chương 1.docx"
             fileName = `Chương ${match[1]}.docx`;
-            // Header cho file gốc: "Chương 1" (Bỏ .1 đi để không bị dính)
+            // Khi gộp, tiêu đề Header của file gốc sẽ là "Chương 1" (chuẩn hóa)
             headerTitle = `Chương ${match[1]}`;
         }
     }
 
     try {
-        // Tìm file trong Folder hiện tại
         let targetFile = files.find(f => f.name === fileName && f.folderId === currentFolderId);
 
         if (targetFile) {
-            // === NỐI VÀO FILE CŨ ===
-            // Nối nội dung
+            // NỐI FILE
             targetFile.rawContent += "\n\n" + contentToAdd;
             targetFile.wordCount = countWords(targetFile.rawContent);
             targetFile.timestamp = Date.now();
             
             showToast(`📝 Đã nối: ${fileName} (${targetFile.wordCount} từ)`);
-            
-            // Re-generate Blob
-            // Lưu ý: targetFile.headerInDoc giữ nguyên là Header gốc (ví dụ "Chương 1")
             const blob = await generateDocx(targetFile.headerInDoc, targetFile.rawContent);
             targetFile.blob = blob;
-            
-            // Cập nhật DB
-            saveFileToDB(targetFile);
+            saveItemToDB('files', targetFile);
 
         } else {
-            // === TẠO FILE MỚI ===
+            // TẠO MỚI
             const wc = countWords(contentToAdd);
             targetFile = { 
                 id: Date.now(), 
                 name: fileName, 
-                headerInDoc: headerTitle, // Lưu header chuẩn
+                headerInDoc: headerTitle, 
                 rawContent: contentToAdd, 
                 wordCount: wc,
                 blob: null, 
                 selected: false,
                 timestamp: Date.now(),
-                folderId: currentFolderId // Lưu vào folder đang mở
+                folderId: currentFolderId
             };
             files.push(targetFile);
             
             showToast(`⚡ Mới: ${fileName} (${wc} từ)`);
-            
             const blob = await generateDocx(headerTitle, contentToAdd);
             targetFile.blob = blob;
-            
-            // Lưu DB
-            saveFileToDB(targetFile);
+            saveItemToDB('files', targetFile);
         }
 
-        // Tăng số chương tự động
+        // Tăng số chương (cho input lần sau)
         const numberMatch = inputTitle.match(/(\d+)(\.(\d+))?/);
         if (numberMatch) {
             if (numberMatch[2]) {
@@ -261,7 +191,10 @@ async function merge(autoClear) {
             }
         }
 
+        // QUAN TRỌNG: Chỉ xóa Editor khi mọi thứ ĐÃ XONG
+        // Đây là tín hiệu cho Tampermonkey biết "Tôi đã xong, hãy gửi cái tiếp theo"
         if(autoClear) els.editor.value = '';
+        
         renderAll();
 
     } catch (e) {
@@ -270,55 +203,34 @@ async function merge(autoClear) {
     }
 }
 
-// --- DOCX GENERATOR ---
+// --- GENERATE DOCX ---
 function generateDocx(titleText, rawContent) {
     const { Document, Packer, Paragraph, TextRun } = docx;
-    
-    const paragraphsRaw = rawContent.split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0);
-
+    const paragraphsRaw = rawContent.split('\n').map(l => l.trim()).filter(l => l.length > 0);
     const docChildren = [];
 
-    // Header: Size 32 (16pt), Đen, Font Calibri, Không Bold
+    // Header
     docChildren.push(new Paragraph({
-        children: [new TextRun({ 
-            text: titleText, 
-            font: "Calibri", 
-            size: 32,
-            color: "000000"
-        })],
+        children: [new TextRun({ text: titleText, font: "Calibri", size: 32, color: "000000" })],
         spacing: { after: 240 }
     }));
-
     // Body
     paragraphsRaw.forEach(line => {
         docChildren.push(new Paragraph({
-            children: [new TextRun({ 
-                text: line, 
-                font: "Calibri", 
-                size: 32,
-                color: "000000"
-            })],
+            children: [new TextRun({ text: line, font: "Calibri", size: 32, color: "000000" })],
             spacing: { after: 240 }
         }));
     });
-
-    const doc = new Document({ sections: [{ children: docChildren }] });
-    return Packer.toBlob(doc);
+    return Packer.toBlob(new Document({ sections: [{ children: docChildren }] }));
 }
 
-// --- RENDER UI ---
+// --- RENDER ---
 function renderAll() {
-    // Filter items theo folder hiện tại
     const currentFiles = files.filter(f => f.folderId === currentFolderId);
-    // Sort files mới nhất lên đầu
     currentFiles.sort((a, b) => b.timestamp - a.timestamp);
 
-    // Sidebar
     els.fileCount.innerText = currentFiles.length;
     els.sidebarList.innerHTML = '';
-    
     currentFiles.forEach(f => {
         const div = document.createElement('div');
         div.className = `file-item ${f.selected ? 'selected' : ''}`;
@@ -330,42 +242,35 @@ function renderAll() {
         els.sidebarList.appendChild(div);
     });
 
-    // Manager
     els.managerList.innerHTML = '';
-    
-    // Breadcrumb Update
-    updateBreadcrumb();
+    // Breadcrumb
+    let navHtml = `<span class="nav-item ${currentFolderId === 'root' ? 'active' : ''}" onclick="navigateToFolder('root')">📁 Gốc</span>`;
+    if (currentFolderId !== 'root') {
+        const f = folders.find(x => x.id === currentFolderId);
+        if (f) navHtml += ` <span class="sep">/</span> <span class="nav-item active">${f.name}</span>`;
+    }
+    els.folderNav.innerHTML = navHtml;
 
-    // Render Folders (Chỉ hiện ở manager)
+    // Folders
     if (currentFolderId === 'root') {
-        folders.forEach(folder => {
+        folders.forEach(fo => {
             const div = document.createElement('div');
             div.className = 'file-row folder-row';
             div.innerHTML = `
                 <div class="col-check"></div>
-                <div class="col-name" onclick="enterFolder(${folder.id})">
-                    📁 ${folder.name}
-                </div>
-                <div class="col-action">
-                    <button class="mini-btn btn-del" onclick="deleteFolder(${folder.id})">✕</button>
-                </div>
+                <div class="col-name" onclick="enterFolder(${fo.id})">📁 ${fo.name}</div>
+                <div class="col-action"><button class="mini-btn btn-del" onclick="deleteFolder(${fo.id})">✕</button></div>
             `;
             els.managerList.appendChild(div);
         });
     }
-
-    if (currentFiles.length === 0 && folders.length === 0 && currentFolderId === 'root') {
-        els.managerList.innerHTML = '<div class="empty-text">Trống</div>';
-    }
-
+    // Files
     currentFiles.forEach(f => {
         const div = document.createElement('div');
         div.className = 'file-row';
         div.innerHTML = `
             <div class="col-check"><input type="checkbox" ${f.selected ? 'checked' : ''} onchange="toggleSelect(${f.id})"></div>
-            <div class="col-name">
-                <span class="name-link" onclick="openPreview(${f.id})">📄 ${f.name}</span>
-            </div>
+            <div class="col-name"><span class="name-link" onclick="openPreview(${f.id})">📄 ${f.name}</span></div>
             <div class="col-wc">${f.wordCount} từ</div>
             <div class="col-action action-btns">
                 <button class="mini-btn btn-dl" onclick="downloadOne(${f.id})">⬇</button>
@@ -376,76 +281,37 @@ function renderAll() {
     });
 }
 
-function updateBreadcrumb() {
-    let html = `<span class="nav-item ${currentFolderId === 'root' ? 'active' : ''}" onclick="navigateToFolder('root')">📁 Gốc</span>`;
-    if (currentFolderId !== 'root') {
-        const folder = folders.find(f => f.id === currentFolderId);
-        if (folder) {
-            html += ` <span class="sep">/</span> <span class="nav-item active">${folder.name}</span>`;
-        }
-    }
-    els.folderNav.innerHTML = html;
-}
-
 // --- ACTIONS ---
-window.toggleSelect = function(id) { 
-    const f = files.find(x => x.id === id); 
-    if(f) { f.selected = !f.selected; renderAll(); } 
-}
-
-window.downloadOne = function(id) { 
-    const f = files.find(x => x.id === id); 
-    if(f && f.blob) saveAs(f.blob, f.name); 
-}
-
-window.deleteOne = function(id) { 
-    if(confirm('Xóa file này?')) { 
-        files = files.filter(f => f.id !== id); 
-        deleteFileFromDB(id);
-        renderAll(); 
-    } 
-}
-
-window.deleteFolder = function(id) {
-    if(confirm('Xóa thư mục này? (Các file bên trong sẽ bị xóa)')) {
-        // Xóa folder
+window.toggleSelect = (id) => { const f = files.find(x => x.id === id); if(f){ f.selected = !f.selected; renderAll(); }};
+window.downloadOne = (id) => { const f = files.find(x => x.id === id); if(f && f.blob) saveAs(f.blob, f.name); };
+window.deleteOne = (id) => { if(confirm('Xóa?')) { deleteItemFromDB('files', id); files = files.filter(f => f.id !== id); renderAll(); } };
+window.deleteFolder = (id) => {
+    if(confirm('Xóa thư mục và toàn bộ file trong đó?')) {
+        deleteItemFromDB('folders', id);
+        const subFiles = files.filter(f => f.folderId === id);
+        subFiles.forEach(f => deleteItemFromDB('files', f.id));
         folders = folders.filter(f => f.id !== id);
-        deleteFolderFromDB(id);
-        
-        // Xóa file trong folder đó
-        const filesToDelete = files.filter(f => f.folderId === id);
         files = files.filter(f => f.folderId !== id);
-        filesToDelete.forEach(f => deleteFileFromDB(f.id));
-        
         renderAll();
     }
-}
-
+};
 function downloadBatch() {
     const selected = files.filter(f => f.selected && f.folderId === currentFolderId);
-    if(!selected.length) return showToast('⚠️ Chưa chọn file');
+    if(!selected.length) return showToast('⚠️ Chưa chọn');
     const zip = new JSZip();
     selected.forEach(f => zip.file(f.name, f.blob));
-    zip.generateAsync({type:"blob"}).then(c => saveAs(c, `Download_${Date.now()}.zip`));
+    zip.generateAsync({type:"blob"}).then(c => saveAs(c, `Batch_${Date.now()}.zip`));
 }
-
 function deleteBatch() {
     const selected = files.filter(f => f.selected && f.folderId === currentFolderId);
-    if(confirm(`Xóa ${selected.length} file đã chọn?`)) {
-        selected.forEach(f => deleteFileFromDB(f.id));
+    if(confirm(`Xóa ${selected.length} file?`)) {
+        selected.forEach(f => deleteItemFromDB('files', f.id));
         files = files.filter(f => !f.selected || f.folderId !== currentFolderId);
         renderAll();
         els.selectAllSidebar.checked = false;
         els.selectAllManager.checked = false;
-        showToast('Đã xóa xong');
     }
 }
+function showToast(msg) { els.toast.innerText = msg; els.toast.classList.add('show'); setTimeout(() => els.toast.classList.remove('show'), 2000); }
 
-function showToast(msg) {
-    els.toast.innerText = msg;
-    els.toast.classList.add('show');
-    setTimeout(() => els.toast.classList.remove('show'), 2000);
-}
-
-// Start
 init();
