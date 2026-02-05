@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Docx Tool Fresh</title>
+    <title>Docx Tool Pro (Auto)</title>
     <link rel="stylesheet" href="index.css">
     <script src="https://unpkg.com/docx@7.1.0/build/index.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    </head>
+</head>
 <body>
 
 <div class="app-layout">
@@ -47,24 +47,20 @@
         <div id="editor-view" class="view-content active">
             <div class="toolbar-card">
                 <div class="chapter-info">
-                    <div class="input-box">
-                        <label>Chương</label>
-                        <input type="number" id="chapterNum" value="1" min="1">
+                    <div class="input-box" style="flex: 1; min-width: 250px;">
+                        <label>Tên File / Chương</label>
+                        <input type="text" id="chapterTitle" value="Chương 1" placeholder="Nhập tên chương..." style="width: 100%; text-align: left;">
                     </div>
-                    <span class="next-hint">Tiếp: <b id="nextNum" style="color: var(--primary)">2</b></span>
                 </div>
 
                 <div class="action-group">
-                    <button class="btn-ghost" id="btnReset" title="Về chương 1 ngay lập tức">↺ Reset 1</button>
-                    <button class="btn-outline" id="btnClearOnly">Xóa trắng</button>
-                    <button class="btn-gradient" id="btnMerge">⚡ Gộp chương</button>
+                    <button class="btn-ghost" id="btnClearOnly">Xóa trắng</button>
+                    <button class="btn-gradient" id="btnMerge">⚡ Gộp & Lưu</button>
                 </div>
             </div>
 
             <div class="editor-wrapper">
-                <textarea id="editor" placeholder="Dán nội dung truyện vào đây...
-✨ Tự động cách dòng giữa các đoạn văn.
-✨ Font Calibri - Size 16 chuẩn chỉ."></textarea>
+                <textarea id="editor" placeholder="Chờ dữ liệu từ tool F2..."></textarea>
             </div>
         </div>
 
