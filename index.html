@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Docx Tool Pro (Auto)</title>
+    <title>Docx Tool Pro (Auto Group)</title>
     <link rel="stylesheet" href="index.css">
     <script src="https://unpkg.com/docx@7.1.0/build/index.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
@@ -48,12 +48,17 @@
             <div class="toolbar-card">
                 <div class="chapter-info">
                     <div class="input-box" style="flex: 1; min-width: 250px;">
-                        <label>Tên File / Chương</label>
+                        <label>Tên Chương</label>
                         <input type="text" id="chapterTitle" value="Chương 1" placeholder="Nhập tên chương..." style="width: 100%; text-align: left;">
                     </div>
                 </div>
 
                 <div class="action-group">
+                    <div style="display:flex; align-items:center; margin-right:15px; font-size:13px; font-weight:600; color:#4b5563;">
+                        <input type="checkbox" id="autoGroup" checked style="width:16px; height:16px; margin-right:6px; cursor:pointer;">
+                        <label for="autoGroup" style="cursor:pointer; user-select:none;">Gộp 1.x vào 1</label>
+                    </div>
+
                     <button class="btn-ghost" id="btnClearOnly">Xóa trắng</button>
                     <button class="btn-gradient" id="btnMerge">⚡ Gộp & Lưu</button>
                 </div>
