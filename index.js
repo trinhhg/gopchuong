@@ -1,10 +1,11 @@
 // CONFIG
-const DB_NAME = 'AutoPilotV15';
+const DB_NAME = 'AutoPilotV16';
 const DB_VERSION = 1;
 let db = null;
 let files = [];
 let folders = [];
 let currentFolderId = 'root';
+let previewFileId = null;
 
 // --- HELPERS ---
 function countWords(text) {
@@ -12,8 +13,15 @@ function countWords(text) {
     return text.trim().split(/\s+/).length;
 }
 function getChapterNum(title) {
+    // Regex lấy số: "Chương 1.2" -> 1.2
     const match = title.match(/(?:Chương|Chapter|Hồi)\s*(\d+(\.\d+)?)/i);
-    return match ? parseFloat(match[1]) : 0;
+    return match ? parseFloat(match[1]) : 999999;
+}
+
+// Hàm chuẩn hóa nội dung: Xóa dòng trống thừa, tách dòng chuẩn
+function cleanContent(text) {
+    // Tách dòng, trim, bỏ dòng rỗng
+    return text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 }
 
 // --- DOM ---
@@ -24,9 +32,10 @@ const els = {
     fileGrid: document.getElementById('fileGrid'),
     fileCount: document.getElementById('fileCount'),
     selectAll: document.getElementById('selectAll'),
+    searchInput: document.getElementById('searchInput'),
     
-    btnDownloadBatch: document.getElementById('btnDownloadBatch'), // Zip
-    btnDownloadDirect: document.getElementById('btnDownloadDirect'), // No Zip
+    btnDownloadBatch: document.getElementById('btnDownloadBatch'),
+    btnDownloadDirect: document.getElementById('btnDownloadDirect'),
     btnDeleteBatch: document.getElementById('btnDeleteBatch'),
     
     chapterTitle: document.getElementById('chapterTitle'),
@@ -38,6 +47,7 @@ const els = {
     previewTitle: document.getElementById('previewTitle'),
     previewDocHeader: document.getElementById('previewDocHeader'),
     previewBody: document.getElementById('previewBody'),
+    previewCounter: document.getElementById('previewCounter'),
     
     toast: document.getElementById('toast')
 };
@@ -77,17 +87,27 @@ async function init() {
     els.folderSelect.onchange = (e) => { currentFolderId = e.target.value; renderFiles(); };
 
     els.selectAll.onchange = (e) => {
-        const list = getSortedFiles();
+        const list = getFilteredFiles();
         list.forEach(f => f.selected = e.target.checked);
         renderFiles();
     };
     
+    els.searchInput.oninput = renderFiles; // Search realtime
+
     els.btnDownloadBatch.onclick = downloadBatchZip;
-    els.btnDownloadDirect.onclick = downloadBatchDirect; // Nút mới
+    els.btnDownloadDirect.onclick = downloadBatchDirect;
     els.btnDeleteBatch.onclick = deleteBatch;
 
-    // Nút ẩn (được trigger bởi Tampermonkey)
     els.btnMerge.onclick = () => merge(true);
+    
+    // Keyboard Nav Preview
+    document.addEventListener('keydown', e => {
+        if(els.previewModal.classList.contains('show')) {
+            if(e.key === 'ArrowLeft') prevChapter();
+            if(e.key === 'ArrowRight') nextChapter();
+            if(e.key === 'Escape') closePreview();
+        }
+    });
 }
 
 // --- FOLDER ---
@@ -124,7 +144,7 @@ function deleteCurrentFolder() {
     }
 }
 
-// --- MERGE LOGIC (AUTO PILOT) ---
+// --- MERGE LOGIC (CLEAN & SORTED) ---
 async function merge(autoClear) {
     const content = els.editor.value;
     if(!content.trim()) return;
@@ -133,9 +153,13 @@ async function merge(autoClear) {
     let safeName = inputTitle.replace(/[:*?"<>|]/g, " -").trim();
     let fileName = `${safeName}.docx`;
     
+    // Tách dòng sạch sẽ ngay từ đầu
+    const lines = cleanContent(content);
+    if(lines.length === 0) return;
+
     let segment = {
         idSort: getChapterNum(inputTitle) || 99999,
-        text: content,
+        lines: lines, // Lưu mảng dòng đã sạch
         header: inputTitle
     };
 
@@ -149,14 +173,21 @@ async function merge(autoClear) {
     if(targetFile) {
         if(!targetFile.segments) targetFile.segments = [];
         targetFile.segments.push(segment);
+        // SORT segments theo số chương (tăng dần)
         targetFile.segments.sort((a,b) => a.idSort - b.idSort);
         
-        targetFile.rawContent = targetFile.segments.map(s => s.text).join('\n\n');
+        // Rebuild Text for Preview & Count
+        // Nối các segment lại, mỗi segment cách nhau 1 dòng trắng logic
+        let allText = "";
+        targetFile.segments.forEach(seg => {
+            allText += seg.lines.join('\n') + '\n';
+        });
+
         targetFile.headerInDoc = targetFile.name.replace('.docx','');
-        targetFile.wordCount = countWords(targetFile.headerInDoc + " " + targetFile.rawContent);
+        targetFile.wordCount = countWords(targetFile.headerInDoc + " " + allText);
         targetFile.timestamp = Date.now();
         
-        targetFile.blob = await generateDocx(targetFile.headerInDoc, targetFile.rawContent);
+        targetFile.blob = await generateDocxFromSegments(targetFile.headerInDoc, targetFile.segments);
         saveDB('files', targetFile);
         toast(`Đã gộp vào: ${fileName}`);
     } else {
@@ -164,11 +195,10 @@ async function merge(autoClear) {
         targetFile = {
             id: Date.now(), name: fileName, folderId: currentFolderId,
             segments: [segment],
-            rawContent: content,
             headerInDoc: inputTitle,
             wordCount: wc, timestamp: Date.now(), selected: false
         };
-        targetFile.blob = await generateDocx(inputTitle, content);
+        targetFile.blob = await generateDocxFromSegments(inputTitle, targetFile.segments);
         files.push(targetFile);
         saveDB('files', targetFile);
         toast(`Đã lưu: ${fileName}`);
@@ -185,39 +215,69 @@ async function merge(autoClear) {
     renderFiles();
 }
 
-function generateDocx(header, body) {
+function generateDocxFromSegments(mainHeader, segments) {
     const { Document, Packer, Paragraph, TextRun } = docx;
-    const lines = body.split('\n').map(l=>l.trim()).filter(l=>l.length>0);
     const children = [];
-    children.push(new Paragraph({children: [new TextRun({text: header, font: "Calibri", size: 32, color: "000000"})], spacing: {after: 240}}));
+
+    // Header Chính (Chương X)
+    children.push(new Paragraph({
+        children: [new TextRun({text: mainHeader, font: "Calibri", size: 32, color: "000000"})],
+        spacing: {after: 240}
+    }));
+    // Dòng trắng cách biệt đầu tiên
     children.push(new Paragraph({text: "", spacing: {after: 240}}));
-    lines.forEach(l => {
-        children.push(new Paragraph({children: [new TextRun({text: l, font: "Calibri", size: 32, color: "000000"})], spacing: {after: 240}}));
+
+    // Duyệt qua từng segment
+    segments.forEach(seg => {
+        seg.lines.forEach(line => {
+            children.push(new Paragraph({
+                children: [new TextRun({text: line, font: "Calibri", size: 32, color: "000000"})],
+                spacing: {after: 240} // Cách dòng chuẩn (12pt spacing)
+            }));
+        });
     });
+
     return Packer.toBlob(new Document({sections:[{children}]}));
 }
 
-// --- RENDER ---
-function getSortedFiles() {
-    const list = files.filter(f => f.folderId === currentFolderId);
+// --- RENDER & SORT ---
+function getFilteredFiles() {
+    let list = files.filter(f => f.folderId === currentFolderId);
+    
+    // Search filter
+    const keyword = els.searchInput.value.toLowerCase().trim();
+    if(keyword) {
+        list = list.filter(f => f.name.toLowerCase().includes(keyword));
+    }
+
+    // Sort by Chapter Number (ALWAYS)
     list.sort((a,b) => getChapterNum(a.name) - getChapterNum(b.name));
     return list;
 }
 
 function renderFiles() {
-    const list = getSortedFiles();
+    const list = getFilteredFiles();
     els.fileCount.innerText = list.length;
     els.fileGrid.innerHTML = '';
 
     list.forEach(f => {
         const card = document.createElement('div');
         card.className = `file-card ${f.selected ? 'selected' : ''}`;
+        
+        // Sự kiện click toàn thẻ để chọn
+        card.onclick = (e) => {
+            // Nếu click vào nút actions thì ko toggle
+            if(e.target.closest('.card-actions') || e.target.closest('.card-body')) return;
+            f.selected = !f.selected;
+            renderFiles();
+        };
+
         card.innerHTML = `
             <div class="card-header">
                 <input type="checkbox" class="card-chk" ${f.selected?'checked':''}>
                 <div class="card-icon">📄</div>
             </div>
-            <div class="card-body" onclick="openPreview(${f.id})">
+            <div class="card-body" title="Xem trước">
                 <div class="file-name">${f.name}</div>
                 <div class="file-info">
                     <span class="tag-wc">${f.wordCount} words</span>
@@ -228,29 +288,21 @@ function renderFiles() {
                 <button class="btn-small del" onclick="deleteOne(${f.id})">Xóa</button>
             </div>
         `;
-        const chk = card.querySelector('.card-chk');
-        chk.onclick = (e) => e.stopPropagation();
-        chk.onchange = () => { f.selected = chk.checked; renderFiles(); };
+        
+        // Add event cho nút Xem trước (body)
+        const body = card.querySelector('.card-body');
+        body.onclick = (e) => { e.stopPropagation(); openPreview(f.id); };
+
         els.fileGrid.appendChild(card);
     });
 }
 
 // --- ACTIONS ---
-window.openPreview = (id) => {
-    const f = files.find(x=>x.id===id);
-    if(!f) return;
-    els.previewTitle.innerText = f.name;
-    els.previewDocHeader.innerText = f.headerInDoc;
-    els.previewBody.innerText = f.rawContent;
-    els.previewModal.classList.add('show');
-}
-window.closePreview = () => els.previewModal.classList.remove('show');
-
 window.downloadOne = (id) => { const f=files.find(x=>x.id===id); if(f&&f.blob) saveAs(f.blob, f.name); }
 window.deleteOne = (id) => { if(confirm('Xóa?')) { delDB('files', id); files=files.filter(f=>f.id!==id); renderFiles(); } }
 
 function deleteBatch() {
-    const s = files.filter(f => f.selected && f.folderId === currentFolderId);
+    const s = getFilteredFiles().filter(f => f.selected);
     if(confirm(`Xóa ${s.length} file?`)) {
         s.forEach(f=>delDB('files',f.id));
         files = files.filter(f=>!f.selected || f.folderId!==currentFolderId);
@@ -259,31 +311,67 @@ function deleteBatch() {
 }
 
 function downloadBatchZip() {
-    const s = files.filter(f => f.selected && f.folderId === currentFolderId);
+    const s = getFilteredFiles().filter(f => f.selected);
     if(!s.length) return toast("Chưa chọn file");
     const z = new JSZip();
     s.forEach(f => z.file(f.name, f.blob));
     z.generateAsync({type:"blob"}).then(c=>saveAs(c, `Batch_${Date.now()}.zip`));
 }
 
-// TẢI LẺ (DOWNLOAD DIRECT - NEW FEATURE)
 async function downloadBatchDirect() {
-    const s = files.filter(f => f.selected && f.folderId === currentFolderId);
+    const s = getFilteredFiles().filter(f => f.selected);
     if(!s.length) return toast("Chưa chọn file");
-    
     toast(`Đang tải ${s.length} file...`);
-    
-    // Dùng vòng lặp với delay nhẹ để tránh trình duyệt chặn
     for (let i = 0; i < s.length; i++) {
         const f = s[i];
         if (f.blob) {
             saveAs(f.blob, f.name);
-            // Chờ 300ms giữa mỗi file
-            await new Promise(resolve => setTimeout(resolve, 300));
+            await new Promise(r => setTimeout(r, 200));
         }
     }
 }
 
 function toast(m) { els.toast.innerText = m; els.toast.classList.add('show'); setTimeout(()=>els.toast.classList.remove('show'), 2000); }
+
+// --- PREVIEW NAV ---
+window.openPreview = (id) => {
+    const f = files.find(x=>x.id===id);
+    if(!f) return;
+    previewFileId = id;
+    
+    // Find index logic
+    const list = getFilteredFiles();
+    const idx = list.findIndex(x=>x.id===id);
+    
+    els.previewTitle.innerText = f.name;
+    els.previewCounter.innerText = `${idx + 1}/${list.length}`;
+    els.previewDocHeader.innerText = f.headerInDoc;
+    
+    // Render text with spacing logic for preview
+    let content = "";
+    if(f.segments) {
+        f.segments.forEach(seg => {
+            seg.lines.forEach(line => {
+                content += `<p>${line}</p>`; // Mỗi line là 1 thẻ p để margin
+            });
+        });
+    } else {
+        // Fallback file cũ
+        content = f.rawContent.split('\n').map(l=>`<p>${l}</p>`).join('');
+    }
+    
+    els.previewBody.innerHTML = content;
+    els.previewModal.classList.add('show');
+}
+window.closePreview = () => els.previewModal.classList.remove('show');
+window.prevChapter = () => navChapter(-1);
+window.nextChapter = () => navChapter(1);
+
+function navChapter(dir) {
+    const list = getFilteredFiles();
+    const idx = list.findIndex(x=>x.id===previewFileId);
+    if(idx !== -1 && list[idx+dir]) openPreview(list[idx+dir].id);
+    else toast(dir>0 ? "Hết danh sách" : "Đầu danh sách");
+}
 
 init();
