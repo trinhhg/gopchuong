@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gộp Chương Ultimate (V8)</title>
+    <title>Gộp Chương V9</title>
     <link rel="stylesheet" href="index.css">
     <script src="https://unpkg.com/docx@7.1.0/build/index.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
@@ -17,8 +17,7 @@
             <span class="brand">✨ DOCX DB</span>
             <span class="count-badge" id="fileCount">0</span>
         </div>
-        <div class="sidebar-content" id="sidebarList">
-            </div>
+        <div class="sidebar-content" id="sidebarList"></div>
         <div class="sidebar-footer">
             <div class="tool-row">
                 <input type="checkbox" id="selectAllSidebar"> 
@@ -30,8 +29,8 @@
 
     <main class="main-area">
         <div class="top-nav">
-            <div class="nav-left">
-                <button class="icon-btn" id="toggleSidebar">☰</button>
+            <div class="nav-container">
+                <button class="icon-btn" id="toggleSidebar" title="Mở Sidebar">☰</button>
                 <div class="tab-group">
                     <button class="tab-pill active" data-tab="editor-view">Soạn thảo</button>
                     <button class="tab-pill" data-tab="manager-view">Quản lý file</button>
@@ -42,33 +41,31 @@
         <div id="editor-view" class="view-content active">
             <div class="toolbar-card">
                 <div class="chapter-info">
-                    <div class="input-box" style="flex: 1; min-width: 200px;">
+                    <div class="input-box" style="flex: 1;">
                         <label>Tên Chương</label>
                         <input type="text" id="chapterTitle" value="Chương 1" style="width: 100%;">
                     </div>
                 </div>
                 <div class="action-group">
-                    <div style="display:flex; align-items:center; margin-right:15px; font-weight:600; font-size:13px;">
-                        <input type="checkbox" id="autoGroup" checked style="width:16px; height:16px; margin-right:6px; cursor: pointer;">
-                        <label for="autoGroup" style="cursor: pointer;">Gộp 1.x vào 1</label>
+                    <div style="display:flex; align-items:center; margin-right:10px;">
+                        <input type="checkbox" id="autoGroup" checked style="width:16px; height:16px; cursor: pointer;">
+                        <label for="autoGroup" style="margin-left:5px; font-weight:600; font-size:13px; cursor: pointer;">Gộp 1.x vào 1</label>
                     </div>
                     <button class="btn-ghost" id="btnClearOnly">Xóa trắng</button>
                     <button class="btn-gradient" id="btnMerge">⚡ Gộp & Lưu</button>
                 </div>
             </div>
             <div class="editor-wrapper">
-                <textarea id="editor" placeholder="Chờ dữ liệu..."></textarea>
+                <textarea id="editor" placeholder="Đang chờ dữ liệu..."></textarea>
             </div>
         </div>
 
         <div id="manager-view" class="view-content">
             <div class="manager-card">
                 <div class="manager-header">
-                    <div class="folder-nav" id="folderNav">
-                        <span class="nav-item root" onclick="navigateToFolder('root')">📁 Gốc</span>
-                    </div>
+                    <div class="folder-nav" id="folderNav"></div>
                     <div class="header-actions">
-                        <button class="btn-outline" id="btnNewFolder">➕ Tạo Thư Mục</button>
+                        <button class="btn-outline" id="btnNewFolder">➕ Folder</button>
                         <button class="btn-danger-soft" id="btnDeleteSelected">Xóa chọn</button>
                     </div>
                 </div>
@@ -78,8 +75,7 @@
                     <div class="th-wc">Số từ</div>
                     <div class="th-action">Tác vụ</div>
                 </div>
-                <div class="file-list-body" id="managerList">
-                    </div>
+                <div class="file-list-body" id="managerList"></div>
             </div>
         </div>
     </main>
