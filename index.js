@@ -28,7 +28,6 @@ const els = {
 
 // --- INIT ---
 function init() {
-    // Chặn F5
     window.addEventListener('beforeunload', function (e) {
         if (files.length > 0) {
             e.preventDefault();
@@ -38,7 +37,6 @@ function init() {
 
     renderAllLists();
 
-    // UI Events
     els.toggleSidebar.addEventListener('click', () => els.sidebar.classList.toggle('collapsed'));
     
     els.tabs.forEach(btn => {
@@ -56,7 +54,6 @@ function init() {
         showToast('Đã xóa trắng khung nhập');
     });
 
-    // Bulk Actions
     const handleSelectAll = (checked) => {
         files.forEach(f => f.selected = checked);
         renderAllLists();
@@ -69,35 +66,39 @@ function init() {
     els.btnDeleteSelected.addEventListener('click', deleteBatch);
 }
 
-// --- LOGIC TÊN FILE & GROUP ---
+// --- LOGIC TÊN FILE & HEADER THÔNG MINH ---
 function parseChapterInfo(inputTitle) {
-    // 1. Xử lý tên file (Windows không cho phép ký tự : * ? " < > |)
-    // Thay dấu : bằng dấu - để lưu file không bị lỗi
+    // Xử lý tên file an toàn cho Windows
     let safeFileName = inputTitle.replace(/[:*?"<>|]/g, " -").trim();
 
-    // 2. Nếu KHÔNG bật chế độ gộp -> Dùng nguyên tên gốc làm tên file
+    // Nếu KHÔNG bật chế độ gộp -> Giữ nguyên mọi thứ
     if (!els.autoGroup.checked) {
         return { 
             fileName: `${safeFileName}.docx`, 
-            headerTitle: inputTitle, // Trong file vẫn giữ nguyên dấu :
-            baseKey: safeFileName // Key để tìm file cũ
+            headerTitle: inputTitle, 
+            baseKey: safeFileName 
         };
     }
     
-    // 3. Nếu BẬT gộp: Tìm số chương (Ví dụ "Chương 186: ABC" -> Group vào "Chương 186")
+    // Nếu BẬT gộp: Tìm số chương
     const match = inputTitle.match(/(?:Chương|Chapter|Hồi)\s*(\d+)/i);
     
     if (match) {
-        // baseKey là "Chương 186" (để các phần 186.1, 186.2 tự gộp vào đây)
         const baseKey = `Chương ${match[1]}`;
+        
+        // --- FIX MỚI Ở ĐÂY ---
+        // Xử lý Tiêu đề hiển thị trong file Word (Header)
+        // Tìm đoạn "Chương X.Y" và thay bằng "Chương X"
+        // Ví dụ: "Chương 1.1: ABC" -> thành "Chương 1: ABC"
+        let cleanHeader = inputTitle.replace(/((?:Chương|Chapter|Hồi)\s*\d+)\.\d+/i, "$1");
+
         return { 
             fileName: `${baseKey}.docx`, 
-            headerTitle: inputTitle, // Header lần đầu tạo file sẽ lấy full tên
+            headerTitle: cleanHeader, // Dùng tiêu đề đã làm sạch số lẻ
             baseKey: baseKey 
         };
     }
     
-    // Trường hợp không tìm thấy số, dùng tên gốc
     return { 
         fileName: `${safeFileName}.docx`, 
         headerTitle: inputTitle,
@@ -112,24 +113,20 @@ async function merge(autoClear) {
 
     const currentTitle = els.chapterTitle.value.trim() || "Chương Mới";
     
-    // Lấy thông tin tên file và tiêu đề
+    // Lấy thông tin đã được xử lý (headerTitle giờ đã sạch, không còn .1)
     const { fileName, headerTitle, baseKey } = parseChapterInfo(currentTitle);
 
     try {
-        // Tìm xem đã có file nào trùng baseKey (Ví dụ Chương 186) chưa
-        // Lưu ý: Ta tìm theo tên file để gộp
         let targetFile = files.find(f => f.name === fileName);
 
         if (targetFile) {
-            // === NỐI VÀO FILE CŨ ===
-            // Cập nhật nội dung ngay lập tức
+            // === NỐI FILE CŨ ===
             targetFile.rawContent += "\n\n" + contentToAdd;
             targetFile.timestamp = Date.now();
 
             showToast(`📝 Đang nối vào: ${fileName}...`);
             
-            // Generate lại DOCX (Header giữ nguyên như lúc tạo file đầu tiên)
-            // Lưu ý: Header của file gộp thường là tên ngắn gọn, nhưng ở đây ta giữ header gốc
+            // Dùng lại headerInDoc (đã được làm sạch từ lúc tạo file)
             const newBlob = await generateDocx(targetFile.headerInDoc, targetFile.rawContent);
             targetFile.blob = newBlob;
             
@@ -140,7 +137,7 @@ async function merge(autoClear) {
             targetFile = { 
                 id: Date.now(), 
                 name: fileName, 
-                headerInDoc: headerTitle, // Lưu lại tiêu đề gốc để dùng khi regenerate
+                headerInDoc: headerTitle, // Lưu tiêu đề sạch "Chương 1: ABC"
                 rawContent: contentToAdd, 
                 blob: null, 
                 selected: false,
@@ -150,13 +147,14 @@ async function merge(autoClear) {
             
             showToast(`⚡ Đang tạo file: ${fileName}...`);
 
+            // Tạo file với tiêu đề sạch
             const blob = await generateDocx(headerTitle, contentToAdd);
             targetFile.blob = blob;
             
             showToast(`✅ Đã tạo xong: ${fileName}`);
         }
 
-        // Tự động tăng số chương (UX)
+        // Tự động tăng số chương 1.1 -> 1.2
         const numberMatch = currentTitle.match(/(\d+)(\.(\d+))?/);
         if (numberMatch) {
             if (numberMatch[2]) {
@@ -170,7 +168,6 @@ async function merge(autoClear) {
         }
 
         if(autoClear) els.editor.value = '';
-        
         files.sort((a, b) => b.timestamp - a.timestamp);
         renderAllLists();
 
@@ -180,30 +177,28 @@ async function merge(autoClear) {
     }
 }
 
-// --- DOCX GENERATOR (FORMAT CHUẨN CALIBRI 16) ---
+// --- DOCX GENERATOR (FORMAT CHUẨN) ---
 function generateDocx(titleText, rawContent) {
     const { Document, Packer, Paragraph, TextRun } = docx;
     
-    // CẤU HÌNH FONT & SIZE
     const FONT_NAME = "Calibri";
-    const FONT_SIZE = 32; // Trong docx, 32 = 16pt (half-points)
+    const FONT_SIZE = 32; // Size 16
 
-    // Xử lý nội dung: Tách dòng, xóa khoảng trắng thừa
     const paragraphsRaw = rawContent.split('\n')
         .map(line => line.trim())
         .filter(line => line.length > 0);
 
     const docChildren = [];
 
-    // 1. TIÊU ĐỀ (Định dạng y hệt body, không in đậm, cùng màu)
+    // 1. HEADER (Tiêu đề sạch, không in đậm, size 16, màu đen)
     docChildren.push(new Paragraph({
         children: [new TextRun({ 
             text: titleText, 
             font: FONT_NAME, 
             size: FONT_SIZE,
-            color: "000000" // Màu đen
+            color: "000000"
         })],
-        spacing: { after: 240 } // Cách đoạn 1 dòng (240 twips ~ 12pt)
+        spacing: { after: 240 } // Cách 1 dòng
     }));
 
     // 2. NỘI DUNG
@@ -215,7 +210,7 @@ function generateDocx(titleText, rawContent) {
                 size: FONT_SIZE,
                 color: "000000"
             })],
-            spacing: { after: 240 } // Tự động tạo khoảng cách 1 dòng trống sau mỗi đoạn
+            spacing: { after: 240 } 
         }));
     });
 
@@ -269,7 +264,6 @@ function renderManager() {
     });
 }
 
-// --- ACTIONS ---
 function toggleSelect(id) {
     const f = files.find(x => x.id === id);
     if(f) { f.selected = !f.selected; renderAllLists(); }
@@ -316,5 +310,4 @@ function deleteBatch() {
     }
 }
 
-// Start
 init();
