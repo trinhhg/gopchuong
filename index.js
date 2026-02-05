@@ -22,12 +22,10 @@ const els = {
     btnDeleteFolder: document.getElementById('btnDeleteFolder'),
     searchInput: document.getElementById('searchInput'),
     
-    // View Buttons
+    // Views
     btnViewFiles: document.getElementById('btnViewFiles'),
     btnViewHistory: document.getElementById('btnViewHistory'),
     btnViewChecklist: document.getElementById('btnViewChecklist'),
-    
-    // View Containers
     viewManager: document.getElementById('viewManager'),
     viewHistory: document.getElementById('viewHistory'),
     viewChecklist: document.getElementById('viewChecklist'),
@@ -54,13 +52,13 @@ const els = {
     btnImportChecklist: document.getElementById('btnImportChecklist'),
     checklistInput: document.getElementById('checklistInput'),
     
-    // Logic Inputs
+    // Logic
     chapterTitle: document.getElementById('chapterTitle'),
     autoGroup: document.getElementById('autoGroup'),
     btnMerge: document.getElementById('btnMerge'),
     editor: document.getElementById('editor'),
     
-    // Preview Modal
+    // Modal
     previewModal: document.getElementById('previewModal'),
     previewTitle: document.getElementById('previewTitle'),
     previewDocHeader: document.getElementById('previewDocHeader'),
@@ -69,76 +67,65 @@ const els = {
     toast: document.getElementById('toast')
 };
 
-// --- DB SYSTEM ---
-function initDB() {
-    return new Promise(resolve => {
-        const req = indexedDB.open(DB_NAME, DB_VERSION);
-        req.onupgradeneeded = e => {
-            const d = e.target.result;
-            if(!d.objectStoreNames.contains('files')) d.createObjectStore('files', {keyPath: 'id'});
-            if(!d.objectStoreNames.contains('folders')) d.createObjectStore('folders', {keyPath: 'id'});
-            if(!d.objectStoreNames.contains('history')) d.createObjectStore('history', {keyPath: 'id'});
-            if(!d.objectStoreNames.contains('checklists')) d.createObjectStore('checklists', {keyPath: 'folderId'});
-        };
-        req.onsuccess = e => { db = e.target.result; loadData().then(resolve); };
-    });
-}
-
-async function loadData() {
-    files = await getAll('files');
-    folders = await getAll('folders');
-    historyLogs = (await getAll('history')).sort((a,b)=>b.timestamp-a.timestamp);
-    const clData = await getAll('checklists');
-    clData.forEach(item => checklists[item.folderId] = item.list);
-    if(!folders.find(f=>f.id==='root')) {
-        folders.push({id:'root', name:'Thư mục chính'});
-        saveDB('folders', {id:'root', name:'Thư mục chính'});
-    }
-    renderFolders(); renderFiles();
-}
-
-function getAll(s) { return new Promise(r => db.transaction(s,'readonly').objectStore(s).getAll().onsuccess=e=>r(e.target.result||[])); }
-function saveDB(s, i) { db.transaction(s,'readwrite').objectStore(s).put(i); }
-function delDB(s, id) { db.transaction(s,'readwrite').objectStore(s).delete(id); }
-function clearStore(s) { const tx = db.transaction(s, 'readwrite'); tx.objectStore(s).clear(); }
-
 // --- LOGGING ---
 function addToLog(msg, type = 'success') {
     const now = new Date();
     const time = now.toLocaleTimeString('vi-VN', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
     const logItem = { id: Date.now(), time: time, msg: msg, type: type, timestamp: now.getTime() };
+    
     historyLogs.unshift(logItem);
     saveDB('history', logItem);
-    if(historyLogs.length > 500) { const removed = historyLogs.pop(); delDB('history', removed.id); }
+    
+    // Giới hạn 500 log
+    if(historyLogs.length > 500) { 
+        const removed = historyLogs.pop(); 
+        delDB('history', removed.id); 
+    }
+    
+    // Luôn render nếu đang ở tab History
     if(currentView === 'history') renderHistory();
 }
 
 function renderHistory() {
     const keyword = els.searchInput.value.toLowerCase();
     const filterType = els.historyFilter.value; 
+    
     const filtered = historyLogs.filter(log => {
         const matchSearch = log.msg.toLowerCase().includes(keyword);
         const matchType = filterType === 'all' || log.type === filterType;
         return matchSearch && matchType;
     });
+    
     els.historyTableBody.innerHTML = '';
-    if(filtered.length === 0) els.emptyHistory.style.display = 'block';
-    else {
+    
+    if(filtered.length === 0) {
+        els.emptyHistory.style.display = 'block';
+    } else {
         els.emptyHistory.style.display = 'none';
         filtered.forEach(log => {
             const tr = document.createElement('tr');
-            tr.innerHTML = `<td>${log.time}</td><td><span class="badge-status ${log.type}">${log.type.toUpperCase()}</span></td><td>${log.msg}</td>`;
+            let statusClass = 'success';
+            let statusText = 'THÀNH CÔNG';
+            
+            if(log.type === 'warn') { statusClass = 'warn'; statusText = 'CẢNH BÁO'; }
+            if(log.type === 'info') { statusClass = 'info'; statusText = 'THÔNG TIN'; }
+
+            tr.innerHTML = `
+                <td>${log.time}</td>
+                <td><span class="badge-status ${statusClass}">${statusText}</span></td>
+                <td>${log.msg}</td>
+            `;
             els.historyTableBody.appendChild(tr);
         });
     }
 }
 
-// --- APP INIT ---
+// --- INIT APP ---
 async function init() {
     await initDB();
-    
-    localStorage.setItem('is_merging_busy', 'false');
+    localStorage.setItem('is_merging_busy', 'false'); // Reset trạng thái queue
 
+    // Events
     els.btnNewFolder.onclick = createFolder;
     els.btnDeleteFolder.onclick = deleteCurrentFolder;
     els.folderSelect.onchange = (e) => { currentFolderId = e.target.value; switchView(currentView); };
@@ -152,40 +139,39 @@ async function init() {
         else renderHistory();
     };
 
-    // --- LOGIC NHẬP CHECKLIST + KIỂM TRA TRÙNG (UPDATED V28) ---
+    // --- LOGIC NHẬP DANH SÁCH (CÓ CHECK TRÙNG) ---
     els.btnImportChecklist.onclick = () => {
         try {
             const raw = els.checklistInput.value;
             if(!raw) return;
             const newItems = JSON.parse(raw);
             
-            // 1. KIỂM TRA TRÙNG TRONG DANH SÁCH VỪA QUÉT
+            // 1. KIỂM TRA TRÙNG TRONG DANH SÁCH QUÉT
             const seen = new Set();
             const duplicates = new Set();
             
             newItems.forEach(item => {
-                if (seen.has(item.num)) {
-                    duplicates.add(`Chương ${item.num}`);
+                if(seen.has(item.num)) {
+                    duplicates.add(item.num);
                 } else {
                     seen.add(item.num);
                 }
             });
 
-            // Ghi Log Kiểm Tra
-            if (duplicates.size > 0) {
-                const dupStr = Array.from(duplicates).join(', ');
-                addToLog(`⚠️ Cảnh báo: Danh sách quét có chương trùng lặp: ${dupStr}`, 'warn');
-                toast(`Có ${duplicates.size} chương bị trùng! Kiểm tra lịch sử.`, 'warn');
+            // Ghi Log Kết Quả
+            if(duplicates.size > 0) {
+                const dupList = Array.from(duplicates).join(', ');
+                addToLog(`⚠️ Phát hiện trùng: Chương ${dupList}`, 'warn');
+                toast(`Có ${duplicates.size} chương trùng! Xem lịch sử.`, 'warn');
             } else {
-                addToLog(`✅ Kiểm tra danh sách quét: Hợp lệ (Không trùng)`, 'success');
+                addToLog(`✅ Danh sách hợp lệ (Không trùng)`, 'success');
             }
 
-            // 2. TIẾN HÀNH NHẬP (GỘP VÀO LIST CŨ)
+            // 2. LƯU VÀO DB
             let currentList = checklists[currentFolderId] || [];
             let addedCount = 0;
             
             newItems.forEach(item => {
-                // Chỉ thêm nếu trong DB chưa có
                 if(!currentList.find(x => x.num === item.num)) {
                     currentList.push(item);
                     addedCount++;
@@ -196,15 +182,10 @@ async function init() {
             checklists[currentFolderId] = currentList;
             saveDB('checklists', {folderId: currentFolderId, list: currentList});
             
-            if(addedCount > 0) {
-                addToLog(`Đã thêm ${addedCount} chương mới vào Checklist`, 'info');
-                toast(`Đã thêm ${addedCount} mục!`);
-            } else {
-                toast(`Không có mục mới`);
-            }
+            if(addedCount > 0) addToLog(`Đã thêm ${addedCount} mục vào danh sách theo dõi`, 'info');
             
-            renderChecklist(); 
-            switchView('checklist'); // Chuyển sang xem list ngay
+            // 3. TỰ ĐỘNG CHUYỂN SANG TAB LỊCH SỬ ĐỂ XEM BÁO CÁO
+            switchView('history'); 
             
         } catch(e) { console.error(e); toast("Lỗi nhập danh sách"); }
     };
@@ -230,6 +211,7 @@ async function init() {
         if(confirm("Xóa toàn bộ lịch sử?")) { historyLogs=[]; clearStore('history'); renderHistory(); toast("Đã xóa lịch sử"); }
     };
 
+    // Queue Merge Trigger
     els.btnMerge.onclick = () => {
         const payload = {
             title: els.chapterTitle.value,
@@ -279,18 +261,15 @@ async function performMerge(task) {
     const { title: inputTitle, content, autoGroup } = task;
     if(!content.trim()) return;
 
-    // Phân tích tên: Lấy cả Số và Tên
     const groupMatch = inputTitle.match(/(?:Chương|Chapter|Hồi)\s*(\d+)(?:\.\d+)?(.*)/i);
     let fileName, headerInDoc;
 
     if (autoGroup && groupMatch) {
         const mainNum = groupMatch[1]; 
         const titleSuffix = groupMatch[2] ? groupMatch[2].trim() : "";
-        
         let baseName = `Chương ${mainNum}`;
-        if(titleSuffix) baseName += ` ${titleSuffix}`; 
+        if(titleSuffix) baseName += ` ${titleSuffix}`;
         
-        // Tên file để lưu DB
         let safeFileName = baseName.replace(/[:*?"<>|]/g, " -").replace(/\s+-\s+/, " - ");
         fileName = `${safeFileName}.docx`;
         headerInDoc = baseName.replace(/\s+:/, ":"); 
@@ -310,18 +289,17 @@ async function performMerge(task) {
 
     if(targetFile) {
         if(!targetFile.segments) targetFile.segments = [];
-        
         const existingIndex = targetFile.segments.findIndex(s => s.idSort === chapterNum);
+        
         if (existingIndex !== -1) {
             targetFile.segments[existingIndex] = segment;
-            addToLog(`Cập nhật nội dung: ${inputTitle}`, 'warn'); // Update màu cam
+            addToLog(`Cập nhật: ${inputTitle}`, 'warn');
         } else {
             targetFile.segments.push(segment);
-            addToLog(`Gộp thêm: ${inputTitle}`, 'success'); // Gộp màu xanh
+            addToLog(`Gộp thêm: ${inputTitle}`, 'success');
         }
 
         targetFile.segments.sort((a,b) => a.idSort - b.idSort);
-        
         let allText = "";
         targetFile.segments.forEach(seg => { allText += seg.lines.join('\n') + '\n'; });
 
@@ -345,22 +323,34 @@ async function performMerge(task) {
         files.push(targetFile);
         saveDB('files', targetFile);
         
-        // Log kép khi tạo mới
         addToLog(`Tạo file mới: ${fileName}`, 'info');
         addToLog(`Gộp thêm: ${inputTitle}`, 'success');
     }
 
-    const numMatch = inputTitle.match(/(\d+)(\.(\d+))?/);
-    if(numMatch) {
-        if(numMatch[2]) els.chapterTitle.value = inputTitle.replace(numMatch[0], `${numMatch[1]}.${parseInt(numMatch[3])+1}`);
-        else els.chapterTitle.value = inputTitle.replace(numMatch[1], parseInt(numMatch[1])+1);
-    }
-
-    if (currentView === 'manager') renderFiles();
-    if (currentView === 'checklist') renderChecklist();
+    // Refresh UI
+    if(currentView === 'manager') renderFiles();
+    if(currentView === 'checklist') renderChecklist();
 }
 
-// --- VIEW SWITCH ---
+// --- DB & UTILS ---
+function initDB() {
+    return new Promise(resolve => {
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = e => {
+            const d = e.target.result;
+            if(!d.objectStoreNames.contains('files')) d.createObjectStore('files', {keyPath: 'id'});
+            if(!d.objectStoreNames.contains('folders')) d.createObjectStore('folders', {keyPath: 'id'});
+            if(!d.objectStoreNames.contains('history')) d.createObjectStore('history', {keyPath: 'id'});
+            if(!d.objectStoreNames.contains('checklists')) d.createObjectStore('checklists', {keyPath: 'folderId'});
+        };
+        req.onsuccess = e => { db = e.target.result; loadData().then(resolve); };
+    });
+}
+function getAll(s) { return new Promise(r => db.transaction(s,'readonly').objectStore(s).getAll().onsuccess=e=>r(e.target.result||[])); }
+function saveDB(s, i) { db.transaction(s,'readwrite').objectStore(s).put(i); }
+function delDB(s, id) { db.transaction(s,'readwrite').objectStore(s).delete(id); }
+function clearStore(s) { const tx = db.transaction(s, 'readwrite'); tx.objectStore(s).clear(); }
+
 function switchView(view) {
     currentView = view;
     [els.btnViewFiles, els.btnViewHistory, els.btnViewChecklist].forEach(b => b.classList.remove('active'));
@@ -378,45 +368,6 @@ function switchView(view) {
     }
 }
 
-// --- CHECKLIST ---
-function renderChecklist() {
-    const list = checklists[currentFolderId] || [];
-    const currentFiles = files.filter(f => f.folderId === currentFolderId);
-    const doneChapters = new Set();
-    
-    currentFiles.forEach(f => {
-        if(f.segments && f.segments.length > 0) f.segments.forEach(s => doneChapters.add(s.idSort));
-        else doneChapters.add(getChapterNum(f.name));
-    });
-
-    els.checklistBody.innerHTML = '';
-    let doneCount = 0;
-
-    if(list.length === 0) {
-        els.checklistBody.innerHTML = '<div class="empty-state">Chưa có dữ liệu. Hãy ấn F2 (Quét List) bên web truyện.</div>';
-    } else {
-        const frag = document.createDocumentFragment();
-        list.forEach(item => {
-            const isDone = doneChapters.has(item.num);
-            if(isDone) doneCount++;
-            const div = document.createElement('div');
-            div.className = `cl-item ${isDone ? 'done' : ''}`;
-            div.innerHTML = `
-                <div class="col-status">${isDone ? '✅ Đã xong' : '⏱️ Chưa gộp'}</div>
-                <div class="col-title">${item.title}</div>
-                <div class="col-num">#${item.num}</div>
-            `;
-            frag.appendChild(div);
-        });
-        els.checklistBody.appendChild(frag);
-    }
-    
-    els.progCount.innerText = `${doneCount}/${list.length}`;
-    const percent = list.length > 0 ? (doneCount / list.length) * 100 : 0;
-    els.progBar.style.width = `${percent}%`;
-}
-
-// --- UTILS ---
 function renderFolders() {
     els.folderSelect.innerHTML = '';
     folders.forEach(f => {
@@ -435,7 +386,6 @@ function renderFiles() {
     els.fileCount.innerText = list.length;
     els.fileGrid.innerHTML = '';
     list.forEach(f => {
-        // HIỂN THỊ RÚT GỌN CHO DASHBOARD
         let displayName = f.name.replace(/\.docx$/i, '');
         const shortMatch = displayName.match(/^(Chương|Chapter|Hồi)\s+(\d+(\.\d+)?)/i);
         if (shortMatch) displayName = `${shortMatch[1]} ${shortMatch[2]}`;
@@ -450,6 +400,30 @@ function renderFiles() {
         `;
         const chk = card.querySelector('.card-chk'); chk.onclick=e=>e.stopPropagation(); chk.onchange=()=>{f.selected=chk.checked;renderFiles();}; card.querySelector('.card-body').onclick=e=>{e.stopPropagation();openPreview(f.id);}; els.fileGrid.appendChild(card);
     });
+}
+
+function renderChecklist() {
+    const list = checklists[currentFolderId] || [];
+    const currentFiles = files.filter(f => f.folderId === currentFolderId);
+    const doneChapters = new Set();
+    currentFiles.forEach(f => { if(f.segments && f.segments.length > 0) f.segments.forEach(s => doneChapters.add(s.idSort)); else doneChapters.add(getChapterNum(f.name)); });
+    els.checklistBody.innerHTML = '';
+    let doneCount = 0;
+    if(list.length === 0) els.checklistBody.innerHTML = '<div class="empty-state">Chưa có dữ liệu.</div>';
+    else {
+        const frag = document.createDocumentFragment();
+        list.forEach(item => {
+            const isDone = doneChapters.has(item.num);
+            if(isDone) doneCount++;
+            const div = document.createElement('div');
+            div.className = `cl-item ${isDone ? 'done' : ''}`;
+            div.innerHTML = `<div class="col-status">${isDone?'✅ Đã xong':'⏱️ Chưa gộp'}</div><div class="col-title">${item.title}</div><div class="col-num">#${item.num}</div>`;
+            frag.appendChild(div);
+        });
+        els.checklistBody.appendChild(frag);
+    }
+    els.progCount.innerText = `${doneCount}/${list.length}`;
+    els.progBar.style.width = `${(list.length>0?(doneCount/list.length)*100:0)}%`;
 }
 
 function generateDocxFromSegments(mainHeader, segments) { const { Document, Packer, Paragraph, TextRun } = docx; const children = []; children.push(new Paragraph({children: [new TextRun({text: mainHeader, font: "Calibri", size: 32, color: "000000"})], spacing: {after: 240}})); children.push(new Paragraph({text: "", spacing: {after: 240}})); segments.forEach(seg => { seg.lines.forEach(line => { children.push(new Paragraph({children: [new TextRun({text: line, font: "Calibri", size: 32, color: "000000"})], spacing: {after: 240}})); }); }); return Packer.toBlob(new Document({sections:[{children}]})); }
