@@ -152,25 +152,65 @@ async function init() {
         else renderHistory();
     };
 
+    // --- LOGIC NHẬP CHECKLIST + KIỂM TRA TRÙNG (UPDATED V28) ---
     els.btnImportChecklist.onclick = () => {
         try {
             const raw = els.checklistInput.value;
             if(!raw) return;
             const newItems = JSON.parse(raw);
-            let currentList = checklists[currentFolderId] || [];
+            
+            // 1. KIỂM TRA TRÙNG TRONG DANH SÁCH VỪA QUÉT
+            const seen = new Set();
+            const duplicates = new Set();
+            
             newItems.forEach(item => {
-                if(!currentList.find(x => x.num === item.num)) currentList.push(item);
+                if (seen.has(item.num)) {
+                    duplicates.add(`Chương ${item.num}`);
+                } else {
+                    seen.add(item.num);
+                }
             });
+
+            // Ghi Log Kiểm Tra
+            if (duplicates.size > 0) {
+                const dupStr = Array.from(duplicates).join(', ');
+                addToLog(`⚠️ Cảnh báo: Danh sách quét có chương trùng lặp: ${dupStr}`, 'warn');
+                toast(`Có ${duplicates.size} chương bị trùng! Kiểm tra lịch sử.`, 'warn');
+            } else {
+                addToLog(`✅ Kiểm tra danh sách quét: Hợp lệ (Không trùng)`, 'success');
+            }
+
+            // 2. TIẾN HÀNH NHẬP (GỘP VÀO LIST CŨ)
+            let currentList = checklists[currentFolderId] || [];
+            let addedCount = 0;
+            
+            newItems.forEach(item => {
+                // Chỉ thêm nếu trong DB chưa có
+                if(!currentList.find(x => x.num === item.num)) {
+                    currentList.push(item);
+                    addedCount++;
+                }
+            });
+            
             currentList.sort((a,b) => a.num - b.num);
             checklists[currentFolderId] = currentList;
             saveDB('checklists', {folderId: currentFolderId, list: currentList});
-            toast(`Đã nhập ${newItems.length} mục!`);
-            renderChecklist(); switchView('checklist');
+            
+            if(addedCount > 0) {
+                addToLog(`Đã thêm ${addedCount} chương mới vào Checklist`, 'info');
+                toast(`Đã thêm ${addedCount} mục!`);
+            } else {
+                toast(`Không có mục mới`);
+            }
+            
+            renderChecklist(); 
+            switchView('checklist'); // Chuyển sang xem list ngay
+            
         } catch(e) { console.error(e); toast("Lỗi nhập danh sách"); }
     };
 
     els.btnClearChecklist.onclick = () => {
-        if(confirm("Xóa danh sách?")) {
+        if(confirm("Xóa danh sách theo dõi?")) {
             delete checklists[currentFolderId];
             delDB('checklists', currentFolderId);
             renderChecklist();
@@ -187,7 +227,7 @@ async function init() {
     els.btnDownloadDirect.onclick = downloadBatchDirect;
     els.btnDeleteBatch.onclick = deleteBatch;
     els.btnClearHistory.onclick = () => {
-        if(confirm("Xóa lịch sử?")) { historyLogs=[]; clearStore('history'); renderHistory(); toast("Đã xóa lịch sử"); }
+        if(confirm("Xóa toàn bộ lịch sử?")) { historyLogs=[]; clearStore('history'); renderHistory(); toast("Đã xóa lịch sử"); }
     };
 
     els.btnMerge.onclick = () => {
@@ -248,13 +288,11 @@ async function performMerge(task) {
         const titleSuffix = groupMatch[2] ? groupMatch[2].trim() : "";
         
         let baseName = `Chương ${mainNum}`;
-        if(titleSuffix) baseName += ` ${titleSuffix}`; // "Chương 1 Ngôi nhà"
+        if(titleSuffix) baseName += ` ${titleSuffix}`; 
         
         // Tên file để lưu DB
         let safeFileName = baseName.replace(/[:*?"<>|]/g, " -").replace(/\s+-\s+/, " - ");
         fileName = `${safeFileName}.docx`;
-        
-        // Header trong file Word (Giữ nguyên dấu :)
         headerInDoc = baseName.replace(/\s+:/, ":"); 
     } else {
         let safeName = inputTitle.replace(/[:*?"<>|]/g, " -").trim();
@@ -276,10 +314,10 @@ async function performMerge(task) {
         const existingIndex = targetFile.segments.findIndex(s => s.idSort === chapterNum);
         if (existingIndex !== -1) {
             targetFile.segments[existingIndex] = segment;
-            addToLog(`Cập nhật: ${inputTitle}`, 'warn');
+            addToLog(`Cập nhật nội dung: ${inputTitle}`, 'warn'); // Update màu cam
         } else {
             targetFile.segments.push(segment);
-            addToLog(`Gộp thêm: ${inputTitle}`, 'success');
+            addToLog(`Gộp thêm: ${inputTitle}`, 'success'); // Gộp màu xanh
         }
 
         targetFile.segments.sort((a,b) => a.idSort - b.idSort);
@@ -287,7 +325,6 @@ async function performMerge(task) {
         let allText = "";
         targetFile.segments.forEach(seg => { allText += seg.lines.join('\n') + '\n'; });
 
-        // Giữ lại Header chuẩn nếu có
         if(!targetFile.headerInDoc || targetFile.headerInDoc.includes("Chương Mới")) {
             targetFile.headerInDoc = headerInDoc;
         }
@@ -308,6 +345,7 @@ async function performMerge(task) {
         files.push(targetFile);
         saveDB('files', targetFile);
         
+        // Log kép khi tạo mới
         addToLog(`Tạo file mới: ${fileName}`, 'info');
         addToLog(`Gộp thêm: ${inputTitle}`, 'success');
     }
@@ -392,35 +430,22 @@ function createFolder() { const n = prompt("Tên:"); if(n) { const f = {id: Date
 function deleteCurrentFolder() { if(currentFolderId === 'root') return toast("Lỗi: Root"); if(confirm("Xóa?")) { files.filter(f=>f.folderId===currentFolderId).forEach(f=>delDB('files',f.id)); files = files.filter(f=>f.folderId!==currentFolderId); delDB('folders', currentFolderId); folders = folders.filter(f=>f.id!==currentFolderId); currentFolderId = 'root'; renderFolders(); renderFiles(); switchView(currentView); } }
 function getFilteredFiles() { let list = files.filter(f => f.folderId === currentFolderId); if(currentView === 'manager') { const keyword = els.searchInput.value.toLowerCase().trim(); if(keyword) list = list.filter(f => f.name.toLowerCase().includes(keyword)); } list.sort((a,b) => getChapterNum(a.name) - getChapterNum(b.name)); return list; }
 
-// --- RENDER FILES (FIXED: HIỂN THỊ RÚT GỌN) ---
 function renderFiles() {
     const list = getFilteredFiles();
     els.fileCount.innerText = list.length;
     els.fileGrid.innerHTML = '';
     list.forEach(f => {
-        // --- LOGIC HIỂN THỊ TÊN TRÊN DASHBOARD ---
-        // Lấy tên đầy đủ từ DB (Vd: "Chương 1 - Ngôi nhà.docx")
+        // HIỂN THỊ RÚT GỌN CHO DASHBOARD
         let displayName = f.name.replace(/\.docx$/i, '');
-        
-        // Regex tìm mẫu "Chương X" (và bỏ qua phần tiêu đề phía sau)
-        // Mẫu: Bắt đầu bằng (Chương/Chapter) + Khoảng trắng + Số (1 hoặc 1.1)
         const shortMatch = displayName.match(/^(Chương|Chapter|Hồi)\s+(\d+(\.\d+)?)/i);
-        
-        if (shortMatch) {
-            // Nếu khớp, chỉ hiển thị "Chương X" cho gọn
-            displayName = `${shortMatch[1]} ${shortMatch[2]}`;
-        }
-        // Nếu không khớp (tên file lạ), giữ nguyên tên gốc
-        // ------------------------------------------
+        if (shortMatch) displayName = `${shortMatch[1]} ${shortMatch[2]}`;
 
         const card = document.createElement('div');
         card.className = `file-card ${f.selected ? 'selected' : ''}`;
         card.onclick = (e) => { if(e.target.closest('.card-actions')||e.target.closest('.card-body')) return; f.selected = !f.selected; renderFiles(); };
         card.innerHTML = `
             <div class="card-header"><input type="checkbox" class="card-chk" ${f.selected?'checked':''}><div class="card-icon">📄</div></div>
-            <div class="card-body" title="${f.name}"> <div class="file-name">${displayName}</div>
-                <div class="file-info"><span class="tag-wc">${f.wordCount} words</span></div>
-            </div>
+            <div class="card-body" title="${f.name}"><div class="file-name">${displayName}</div><div class="file-info"><span class="tag-wc">${f.wordCount} words</span></div></div>
             <div class="card-actions"><button class="btn-small view" onclick="event.stopPropagation(); openPreview(${f.id})">👁 Xem</button><button class="btn-small del" onclick="event.stopPropagation(); deleteOne(${f.id})">🗑 Xóa</button></div>
         `;
         const chk = card.querySelector('.card-chk'); chk.onclick=e=>e.stopPropagation(); chk.onchange=()=>{f.selected=chk.checked;renderFiles();}; card.querySelector('.card-body').onclick=e=>{e.stopPropagation();openPreview(f.id);}; els.fileGrid.appendChild(card);
