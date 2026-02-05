@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Writer Core V20</title>
+    <title>Writer Core V21</title>
     <link rel="stylesheet" href="index.css">
     <script src="https://unpkg.com/docx@7.1.0/build/index.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
@@ -67,22 +67,28 @@
 
         <div id="viewHistory" class="view-section">
             <div class="history-toolbar">
-                <h3>Nhật ký hoạt động</h3>
+                <div class="history-left">
+                    <h3>Nhật ký hoạt động</h3>
+                    <select id="historyFilter" class="filter-select">
+                        <option value="all">Tất cả thông báo</option>
+                        <option value="success">✅ Chỉ hiện Thành công (Check file)</option>
+                        <option value="warn">⚠️ Chỉ hiện Cảnh báo</option>
+                    </select>
+                </div>
                 <button id="btnClearHistory" class="btn-tool danger">Xóa lịch sử</button>
             </div>
             <div class="history-table-wrapper">
                 <table class="history-table">
                     <thead>
                         <tr>
-                            <th width="150">Thời gian</th>
-                            <th width="100">Trạng thái</th>
-                            <th>Nội dung thông báo</th>
+                            <th width="120">Thời gian</th>
+                            <th width="100">Loại</th>
+                            <th>Chi tiết</th>
                         </tr>
                     </thead>
-                    <tbody id="historyTableBody">
-                        </tbody>
+                    <tbody id="historyTableBody"></tbody>
                 </table>
-                <div id="emptyHistory" class="empty-state" style="display:none">Chưa có dữ liệu lịch sử</div>
+                <div id="emptyHistory" class="empty-state" style="display:none">Không tìm thấy dữ liệu</div>
             </div>
         </div>
 
