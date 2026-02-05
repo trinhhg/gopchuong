@@ -1,5 +1,4 @@
 // --- STATE ---
-let currentChapter = 1;
 let files = []; 
 
 // --- DOM ELEMENTS ---
@@ -9,11 +8,11 @@ const els = {
     sidebar: document.getElementById('sidebar'),
     toggleSidebar: document.getElementById('toggleSidebar'),
     editor: document.getElementById('editor'),
-    chapterNum: document.getElementById('chapterNum'),
-    nextNum: document.getElementById('nextNum'),
+    
+    // ĐÃ SỬA: Lấy input theo ID mới
+    chapterTitle: document.getElementById('chapterTitle'),
     
     // Buttons
-    btnReset: document.getElementById('btnReset'),
     btnMerge: document.getElementById('btnMerge'),
     btnClearOnly: document.getElementById('btnClearOnly'),
     btnDownloadAll: document.getElementById('btnDownloadAll'),
@@ -31,9 +30,9 @@ const els = {
 
 // --- INIT ---
 function init() {
-    updateChapterUI();
+    renderAllLists();
 
-    // 1. Sidebar Logic (Sửa lỗi che khuất)
+    // 1. Sidebar Logic
     els.toggleSidebar.addEventListener('click', () => {
         els.sidebar.classList.toggle('collapsed');
     });
@@ -48,28 +47,16 @@ function init() {
         });
     });
 
-    // 3. Reset Button Logic (Không Confirm - Reset ngay)
-    els.btnReset.addEventListener('click', () => {
-        currentChapter = 1;
-        updateChapterUI();
-        showToast('↺ Đã reset về chương 1');
-    });
-
-    // 4. Merge & Clear
+    // 3. Merge Logic (Nút Gộp)
     els.btnMerge.addEventListener('click', () => merge(true));
+
+    // 4. Clear Logic
     els.btnClearOnly.addEventListener('click', () => {
         els.editor.value = '';
         showToast('Đã xóa trắng khung nhập');
     });
 
-    // 5. Input Logic
-    els.chapterNum.addEventListener('change', (e) => {
-        let val = parseInt(e.target.value) || 1;
-        currentChapter = val;
-        updateChapterUI();
-    });
-
-    // 6. Select All & Bulk Actions
+    // 5. Select All & Bulk Actions
     const handleSelectAll = (checked) => {
         files.forEach(f => f.selected = checked);
         renderAllLists();
@@ -82,58 +69,66 @@ function init() {
     els.btnDeleteSelected.addEventListener('click', deleteBatch);
 }
 
-// --- MERGE LOGIC ---
+// --- MERGE LOGIC (CỐT LÕI) ---
 async function merge(autoClear) {
     const rawContent = els.editor.value;
     if (!rawContent.trim()) return showToast('⚠️ Chưa nhập nội dung!');
 
-    const title = `Chương ${currentChapter}`;
-    const docName = `${title}.docx`;
+    // Lấy tên từ ô nhập, nếu rỗng thì đặt tạm tên
+    let titleText = els.chapterTitle.value.trim() || "Chương Mới";
+    const docName = `${titleText}.docx`;
 
     try {
-        const blob = await generateDocx(title, rawContent);
+        const blob = await generateDocx(titleText, rawContent);
         
+        // Thêm vào danh sách file
         files.push({ id: Date.now(), name: docName, blob, selected: false });
-        currentChapter++;
-        updateChapterUI();
         
-        if(autoClear) els.editor.value = '';
+        // --- LOGIC TỰ TĂNG SỐ ---
+        // Tự động tìm số cuối cùng trong chuỗi và cộng thêm 1
+        // VD: "Chương 1" -> "Chương 2", "Chương 1.1" -> "Chương 1.2"
+        const nextTitle = titleText.replace(/(\d+)(?!.*\d)/, (match) => {
+            return parseInt(match) + 1;
+        });
+        
+        if (nextTitle !== titleText) {
+            els.chapterTitle.value = nextTitle; // Cập nhật ô input cho chương sau
+        }
+
+        if(autoClear) els.editor.value = ''; // Xóa nội dung cũ để chờ chương mới
         renderAllLists();
         showToast(`⚡ Đã tạo: ${docName}`);
+
     } catch (e) {
         console.error(e);
         showToast('❌ Lỗi tạo file');
     }
 }
 
-// --- DOCX GENERATOR (AUTO SPACING LOGIC) ---
+// --- DOCX GENERATOR ---
 function generateDocx(titleText, rawContent) {
     const { Document, Packer, Paragraph, TextRun } = docx;
     const FONT_NAME = "Calibri";
-    const FONT_SIZE = 32; // 16pt
+    const FONT_SIZE = 32; // 16pt (docx tính half-points)
 
-    // LOGIC TỰ ĐỘNG CÁCH DÒNG:
-    // 1. Split text bằng \n
-    // 2. Trim từng dòng và Filter bỏ dòng rỗng để tránh khoảng trống thừa thãi
-    // 3. Tạo Paragraph với spacing after = 240 (tương đương 1 dòng trống)
-    
+    // Xử lý xuống dòng: Tách dòng, trim, bỏ dòng rỗng
     const paragraphsRaw = rawContent.split('\n')
-        .map(line => line.trim())       // Xóa khoảng trắng thừa đầu đuôi
-        .filter(line => line.length > 0); // Bỏ dòng trống tuyệt đối
+        .map(line => line.trim())
+        .filter(line => line.length > 0);
 
     const docChildren = [];
 
-    // Header Chương
+    // Header (Tên chương)
     docChildren.push(new Paragraph({
-        children: [new TextRun({ text: titleText, font: FONT_NAME, size: FONT_SIZE })],
-        spacing: { after: 300 } // Cách nội dung một chút
+        children: [new TextRun({ text: titleText, font: FONT_NAME, size: FONT_SIZE, bold: true })],
+        spacing: { after: 300 }
     }));
 
-    // Nội dung
+    // Body (Nội dung)
     paragraphsRaw.forEach(line => {
         docChildren.push(new Paragraph({
             children: [new TextRun({ text: line, font: FONT_NAME, size: FONT_SIZE })],
-            spacing: { after: 240 } // Tự động tạo khoảng cách dưới mỗi đoạn
+            spacing: { after: 240 } // Khoảng cách đoạn
         }));
     });
 
@@ -157,8 +152,11 @@ function renderSidebar() {
     [...files].reverse().forEach(f => {
         const div = document.createElement('div');
         div.className = `file-item ${f.selected ? 'selected' : ''}`;
-        div.onclick = () => toggleSelect(f.id);
-        div.innerHTML = `<input type="checkbox" ${f.selected ? 'checked' : ''}><span>${f.name}</span>`;
+        div.onclick = (e) => {
+            // Click vào text thì chọn, click vào checkbox thì để checkbox lo
+            if(e.target.type !== 'checkbox') toggleSelect(f.id);
+        };
+        div.innerHTML = `<input type="checkbox" ${f.selected ? 'checked' : ''} onclick="event.stopPropagation(); toggleSelect(${f.id})"><span>${f.name}</span>`;
         els.sidebarList.appendChild(div);
     });
 }
@@ -176,15 +174,15 @@ function renderManager() {
             <div class="col-check"><input type="checkbox" ${f.selected ? 'checked' : ''} onchange="toggleSelect(${f.id})"></div>
             <div class="col-name">${f.name}</div>
             <div class="col-action action-btns">
-                <button class="mini-btn btn-dl" onclick="downloadOne(${f.id})">⬇</button>
-                <button class="mini-btn btn-del" onclick="deleteOne(${f.id})">✕</button>
+                <button class="mini-btn btn-dl" onclick="downloadOne(${f.id})" title="Tải file này">⬇</button>
+                <button class="mini-btn btn-del" onclick="deleteOne(${f.id})" title="Xóa file này">✕</button>
             </div>
         `;
         els.managerList.appendChild(div);
     });
 }
 
-// --- ACTIONS ---
+// --- ACTIONS & HELPERS ---
 function toggleSelect(id) {
     const f = files.find(x => x.id === id);
     if(f) {
@@ -193,28 +191,24 @@ function toggleSelect(id) {
     }
 }
 
-function updateChapterUI() {
-    els.chapterNum.value = currentChapter;
-    els.nextNum.innerText = currentChapter + 1;
-}
-
 function showToast(msg) {
     els.toast.innerText = msg;
     els.toast.classList.add('show');
     setTimeout(() => els.toast.classList.remove('show'), 2000);
 }
 
-// Helpers cho Download/Delete
 function downloadOne(id) {
     const f = files.find(x => x.id === id);
     if(f) saveAs(f.blob, f.name);
 }
+
 function deleteOne(id) {
     if(confirm('Xóa file này?')) {
         files = files.filter(f => f.id !== id);
         renderAllLists();
     }
 }
+
 function downloadBatch() {
     const selected = files.filter(f => f.selected);
     if(!selected.length) return showToast('⚠️ Chưa chọn file');
@@ -222,6 +216,7 @@ function downloadBatch() {
     selected.forEach(f => zip.file(f.name, f.blob));
     zip.generateAsync({type:"blob"}).then(c => saveAs(c, `Truyen_Export_${Date.now()}.zip`));
 }
+
 function deleteBatch() {
     const selected = files.filter(f => f.selected);
     if(!selected.length) return showToast('⚠️ Chưa chọn file');
@@ -234,5 +229,5 @@ function deleteBatch() {
     }
 }
 
-// Start
+// Start App
 init();
