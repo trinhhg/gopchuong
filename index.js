@@ -1,5 +1,5 @@
 // CONFIG
-const DB_NAME = 'AutoPilotV16';
+const DB_NAME = 'AutoPilotV18'; // Đổi tên DB để reset sạch sẽ dữ liệu cũ tránh lỗi
 const DB_VERSION = 1;
 let db = null;
 let files = [];
@@ -12,10 +12,14 @@ function countWords(text) {
     if (!text || !text.trim()) return 0;
     return text.trim().split(/\s+/).length;
 }
+
 function getChapterNum(title) {
+    // Regex lấy số chương chuẩn xác (1, 1.1, 1.2...)
     const match = title.match(/(?:Chương|Chapter|Hồi)\s*(\d+(\.\d+)?)/i);
-    return match ? parseFloat(match[1]) : 999999;
+    // Nếu không tìm thấy số, trả về timestamp để luôn nằm cuối
+    return match ? parseFloat(match[1]) : Date.now();
 }
+
 function cleanContent(text) {
     return text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 }
@@ -138,7 +142,7 @@ function deleteCurrentFolder() {
     }
 }
 
-// --- MERGE LOGIC ---
+// --- MERGE LOGIC (FIX DUPLICATE) ---
 async function merge(autoClear) {
     const content = els.editor.value;
     if(!content.trim()) return;
@@ -150,8 +154,12 @@ async function merge(autoClear) {
     const lines = cleanContent(content);
     if(lines.length === 0) return;
 
+    // Xác định ID của Segment dựa trên số chương (ví dụ 8.3)
+    // ID này dùng để định danh duy nhất cho đoạn text đó trong file
+    const chapterNum = getChapterNum(inputTitle);
+    
     let segment = {
-        idSort: getChapterNum(inputTitle) || 99999,
+        idSort: chapterNum,
         lines: lines,
         header: inputTitle
     };
@@ -165,9 +173,25 @@ async function merge(autoClear) {
 
     if(targetFile) {
         if(!targetFile.segments) targetFile.segments = [];
-        targetFile.segments.push(segment);
+        
+        // --- LOGIC CHỐNG TRÙNG (V18) ---
+        // Tìm xem trong file đã có chương này chưa (dựa vào idSort)
+        const existingIndex = targetFile.segments.findIndex(s => s.idSort === chapterNum);
+
+        if (existingIndex !== -1) {
+            // NẾU CÓ RỒI: Ghi đè (Update) nội dung mới vào vị trí cũ
+            targetFile.segments[existingIndex] = segment;
+            toast(`Đã cập nhật lại: ${inputTitle}`); // Thông báo khác đi chút
+        } else {
+            // NẾU CHƯA CÓ: Thêm mới vào
+            targetFile.segments.push(segment);
+            toast(`Đã nối thêm: ${inputTitle}`);
+        }
+
+        // Sắp xếp lại theo thứ tự chương
         targetFile.segments.sort((a,b) => a.idSort - b.idSort);
         
+        // Tái tạo nội dung hiển thị
         let allText = "";
         targetFile.segments.forEach(seg => {
             allText += seg.lines.join('\n') + '\n';
@@ -179,8 +203,9 @@ async function merge(autoClear) {
         
         targetFile.blob = await generateDocxFromSegments(targetFile.headerInDoc, targetFile.segments);
         saveDB('files', targetFile);
-        toast(`Đã gộp vào: ${fileName}`);
+        
     } else {
+        // TẠO FILE MỚI
         const wc = countWords(inputTitle + " " + content);
         targetFile = {
             id: Date.now(), name: fileName, folderId: currentFolderId,
@@ -191,9 +216,10 @@ async function merge(autoClear) {
         targetFile.blob = await generateDocxFromSegments(inputTitle, targetFile.segments);
         files.push(targetFile);
         saveDB('files', targetFile);
-        toast(`Đã lưu: ${fileName}`);
+        toast(`Đã tạo mới: ${fileName}`);
     }
 
+    // Auto next logic
     const numMatch = inputTitle.match(/(\d+)(\.(\d+))?/);
     if(numMatch) {
         if(numMatch[2]) els.chapterTitle.value = inputTitle.replace(numMatch[0], `${numMatch[1]}.${parseInt(numMatch[3])+1}`);
@@ -208,17 +234,29 @@ function generateDocxFromSegments(mainHeader, segments) {
     const { Document, Packer, Paragraph, TextRun } = docx;
     const children = [];
 
+    // Header File
     children.push(new Paragraph({
         children: [new TextRun({text: mainHeader, font: "Calibri", size: 32, color: "000000"})],
         spacing: {after: 240}
     }));
+    // Dòng trắng sau header
     children.push(new Paragraph({text: "", spacing: {after: 240}}));
 
+    // Nội dung các segments
     segments.forEach(seg => {
+        // Có thể thêm tiêu đề chương con ở đây nếu muốn, hiện tại ta chỉ nối nội dung
+        // Nếu muốn hiện "Chương 8.3" trong nội dung gộp thì uncomment dòng dưới:
+        /*
+        children.push(new Paragraph({
+             children: [new TextRun({text: seg.header, font: "Calibri", size: 28, bold: true})],
+             spacing: {before: 240, after: 120}
+        }));
+        */
+
         seg.lines.forEach(line => {
             children.push(new Paragraph({
                 children: [new TextRun({text: line, font: "Calibri", size: 32, color: "000000"})],
-                spacing: {after: 240}
+                spacing: {after: 240} // Cách dòng 12pt
             }));
         });
     });
@@ -229,7 +267,7 @@ function generateDocxFromSegments(mainHeader, segments) {
 // --- RENDER & SORT ---
 function getFilteredFiles() {
     let list = files.filter(f => f.folderId === currentFolderId);
-    const keyword = document.getElementById('searchInput').value.toLowerCase().trim(); // Fix searchInput ref
+    const keyword = document.getElementById('searchInput').value.toLowerCase().trim();
     if(keyword) {
         list = list.filter(f => f.name.toLowerCase().includes(keyword));
     }
@@ -252,7 +290,6 @@ function renderFiles() {
             renderFiles();
         };
 
-        // --- ĐỔI NÚT DOWNLOAD THÀNH PREVIEW Ở ĐÂY ---
         card.innerHTML = `
             <div class="card-header">
                 <input type="checkbox" class="card-chk" ${f.selected?'checked':''}>
@@ -274,7 +311,6 @@ function renderFiles() {
         chk.onclick = (e) => e.stopPropagation();
         chk.onchange = () => { f.selected = chk.checked; renderFiles(); };
         
-        // Thêm event click vào body thẻ cũng mở preview (cho tiện)
         const body = card.querySelector('.card-body');
         body.onclick = (e) => { e.stopPropagation(); openPreview(f.id); };
 
@@ -282,7 +318,7 @@ function renderFiles() {
     });
 }
 
-// --- ACTIONS ---
+// --- ACTIONS & PREVIEW ---
 window.openPreview = (id) => {
     const f = files.find(x=>x.id===id);
     if(!f) return;
@@ -292,7 +328,7 @@ window.openPreview = (id) => {
     const idx = list.findIndex(x=>x.id===id);
     
     els.previewTitle.innerText = f.name;
-    document.querySelector('.modal-nav span').innerText = `${idx + 1}/${list.length}`; // Fix ID counter
+    document.querySelector('.modal-nav span').innerText = `${idx + 1}/${list.length}`;
     els.previewDocHeader.innerText = f.headerInDoc;
     
     let content = "";
