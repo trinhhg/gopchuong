@@ -1,5 +1,5 @@
 // CONFIG
-const DB_NAME = 'AutoPilotV18'; // Đổi tên DB để reset sạch sẽ dữ liệu cũ tránh lỗi
+const DB_NAME = 'AutoPilotV19';
 const DB_VERSION = 1;
 let db = null;
 let files = [];
@@ -12,14 +12,10 @@ function countWords(text) {
     if (!text || !text.trim()) return 0;
     return text.trim().split(/\s+/).length;
 }
-
 function getChapterNum(title) {
-    // Regex lấy số chương chuẩn xác (1, 1.1, 1.2...)
     const match = title.match(/(?:Chương|Chapter|Hồi)\s*(\d+(\.\d+)?)/i);
-    // Nếu không tìm thấy số, trả về timestamp để luôn nằm cuối
     return match ? parseFloat(match[1]) : Date.now();
 }
-
 function cleanContent(text) {
     return text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 }
@@ -48,8 +44,32 @@ const els = {
     previewDocHeader: document.getElementById('previewDocHeader'),
     previewBody: document.getElementById('previewBody'),
     
+    // History
+    btnHistory: document.getElementById('btnHistory'),
+    historyPanel: document.getElementById('historyPanel'),
+    historyList: document.getElementById('historyList'),
+    btnClearHistory: document.getElementById('btnClearHistory'),
+    
     toast: document.getElementById('toast')
 };
+
+// --- LOGGING ---
+function addToLog(msg, type = 'success') {
+    const time = new Date().toLocaleTimeString('vi-VN', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    const item = document.createElement('div');
+    item.className = 'log-item';
+    item.innerHTML = `
+        <div class="log-header">
+            <span class="log-status status-${type}"></span>
+            <span class="log-time">${time}</span>
+        </div>
+        <div class="log-msg">${msg}</div>
+    `;
+    const empty = els.historyList.querySelector('.empty-log');
+    if(empty) empty.remove();
+    els.historyList.prepend(item);
+    if(els.historyList.children.length > 50) els.historyList.lastElementChild.remove();
+}
 
 // --- DB INIT ---
 function initDB() {
@@ -70,8 +90,7 @@ async function loadData() {
         folders.push({id:'root', name:'Thư mục chính'});
         saveDB('folders', {id:'root', name:'Thư mục chính'});
     }
-    renderFolders();
-    renderFiles();
+    renderFolders(); renderFiles();
 }
 function getAll(s) { return new Promise(r => db.transaction(s,'readonly').objectStore(s).getAll().onsuccess=e=>r(e.target.result||[])); }
 function saveDB(s, i) { db.transaction(s,'readwrite').objectStore(s).put(i); }
@@ -92,13 +111,23 @@ async function init() {
     };
     
     els.searchInput.oninput = renderFiles;
-
     els.btnDownloadBatch.onclick = downloadBatchZip;
     els.btnDownloadDirect.onclick = downloadBatchDirect;
     els.btnDeleteBatch.onclick = deleteBatch;
-
     els.btnMerge.onclick = () => merge(true);
     
+    // History Toggle
+    els.btnHistory.onclick = (e) => {
+        e.stopPropagation();
+        els.historyPanel.classList.toggle('show');
+    };
+    document.onclick = (e) => {
+        if (!els.historyPanel.contains(e.target) && e.target !== els.btnHistory) {
+            els.historyPanel.classList.remove('show');
+        }
+    };
+    els.btnClearHistory.onclick = () => { els.historyList.innerHTML = '<div class="empty-log">Chưa có hoạt động</div>'; };
+
     document.addEventListener('keydown', e => {
         if(els.previewModal.classList.contains('show')) {
             if(e.key === 'ArrowLeft') prevChapter();
@@ -108,41 +137,7 @@ async function init() {
     });
 }
 
-// --- FOLDER ---
-function renderFolders() {
-    els.folderSelect.innerHTML = '';
-    folders.forEach(f => {
-        const opt = document.createElement('option');
-        opt.value = f.id;
-        opt.innerText = f.name;
-        if(f.id === currentFolderId) opt.selected = true;
-        els.folderSelect.appendChild(opt);
-    });
-}
-function createFolder() {
-    const name = prompt("Tên thư mục mới:");
-    if(name) {
-        const f = {id: Date.now().toString(), name: name};
-        folders.push(f);
-        saveDB('folders', f);
-        currentFolderId = f.id;
-        renderFolders(); renderFiles();
-    }
-}
-function deleteCurrentFolder() {
-    if(currentFolderId === 'root') return toast("Không thể xóa Root");
-    if(confirm("Xóa thư mục này?")) {
-        const sub = files.filter(f=>f.folderId===currentFolderId);
-        sub.forEach(f=>delDB('files',f.id));
-        files = files.filter(f=>f.folderId!==currentFolderId);
-        delDB('folders', currentFolderId);
-        folders = folders.filter(f=>f.id!==currentFolderId);
-        currentFolderId = 'root';
-        renderFolders(); renderFiles();
-    }
-}
-
-// --- MERGE LOGIC (FIX DUPLICATE) ---
+// --- MERGE LOGIC ---
 async function merge(autoClear) {
     const content = els.editor.value;
     if(!content.trim()) return;
@@ -151,11 +146,12 @@ async function merge(autoClear) {
     let safeName = inputTitle.replace(/[:*?"<>|]/g, " -").trim();
     let fileName = `${safeName}.docx`;
     
+    // Log nhận input
+    addToLog(`Nhận dữ liệu: ${inputTitle}`, 'info');
+
     const lines = cleanContent(content);
     if(lines.length === 0) return;
 
-    // Xác định ID của Segment dựa trên số chương (ví dụ 8.3)
-    // ID này dùng để định danh duy nhất cho đoạn text đó trong file
     const chapterNum = getChapterNum(inputTitle);
     
     let segment = {
@@ -174,24 +170,21 @@ async function merge(autoClear) {
     if(targetFile) {
         if(!targetFile.segments) targetFile.segments = [];
         
-        // --- LOGIC CHỐNG TRÙNG (V18) ---
-        // Tìm xem trong file đã có chương này chưa (dựa vào idSort)
         const existingIndex = targetFile.segments.findIndex(s => s.idSort === chapterNum);
-
         if (existingIndex !== -1) {
-            // NẾU CÓ RỒI: Ghi đè (Update) nội dung mới vào vị trí cũ
+            // Cập nhật nếu trùng
             targetFile.segments[existingIndex] = segment;
-            toast(`Đã cập nhật lại: ${inputTitle}`); // Thông báo khác đi chút
+            addToLog(`Cập nhật nội dung: ${inputTitle}`, 'success');
+            toast(`Đã cập nhật: ${inputTitle}`);
         } else {
-            // NẾU CHƯA CÓ: Thêm mới vào
+            // Thêm mới
             targetFile.segments.push(segment);
+            addToLog(`Gộp thêm: ${inputTitle}`, 'success');
             toast(`Đã nối thêm: ${inputTitle}`);
         }
 
-        // Sắp xếp lại theo thứ tự chương
         targetFile.segments.sort((a,b) => a.idSort - b.idSort);
         
-        // Tái tạo nội dung hiển thị
         let allText = "";
         targetFile.segments.forEach(seg => {
             allText += seg.lines.join('\n') + '\n';
@@ -205,7 +198,6 @@ async function merge(autoClear) {
         saveDB('files', targetFile);
         
     } else {
-        // TẠO FILE MỚI
         const wc = countWords(inputTitle + " " + content);
         targetFile = {
             id: Date.now(), name: fileName, folderId: currentFolderId,
@@ -216,10 +208,11 @@ async function merge(autoClear) {
         targetFile.blob = await generateDocxFromSegments(inputTitle, targetFile.segments);
         files.push(targetFile);
         saveDB('files', targetFile);
-        toast(`Đã tạo mới: ${fileName}`);
+        
+        addToLog(`Tạo file mới: ${fileName}`, 'success');
+        toast(`Đã tạo: ${fileName}`);
     }
 
-    // Auto next logic
     const numMatch = inputTitle.match(/(\d+)(\.(\d+))?/);
     if(numMatch) {
         if(numMatch[2]) els.chapterTitle.value = inputTitle.replace(numMatch[0], `${numMatch[1]}.${parseInt(numMatch[3])+1}`);
@@ -233,34 +226,13 @@ async function merge(autoClear) {
 function generateDocxFromSegments(mainHeader, segments) {
     const { Document, Packer, Paragraph, TextRun } = docx;
     const children = [];
-
-    // Header File
-    children.push(new Paragraph({
-        children: [new TextRun({text: mainHeader, font: "Calibri", size: 32, color: "000000"})],
-        spacing: {after: 240}
-    }));
-    // Dòng trắng sau header
+    children.push(new Paragraph({children: [new TextRun({text: mainHeader, font: "Calibri", size: 32, color: "000000"})], spacing: {after: 240}}));
     children.push(new Paragraph({text: "", spacing: {after: 240}}));
-
-    // Nội dung các segments
     segments.forEach(seg => {
-        // Có thể thêm tiêu đề chương con ở đây nếu muốn, hiện tại ta chỉ nối nội dung
-        // Nếu muốn hiện "Chương 8.3" trong nội dung gộp thì uncomment dòng dưới:
-        /*
-        children.push(new Paragraph({
-             children: [new TextRun({text: seg.header, font: "Calibri", size: 28, bold: true})],
-             spacing: {before: 240, after: 120}
-        }));
-        */
-
         seg.lines.forEach(line => {
-            children.push(new Paragraph({
-                children: [new TextRun({text: line, font: "Calibri", size: 32, color: "000000"})],
-                spacing: {after: 240} // Cách dòng 12pt
-            }));
+            children.push(new Paragraph({children: [new TextRun({text: line, font: "Calibri", size: 32, color: "000000"})], spacing: {after: 240}}));
         });
     });
-
     return Packer.toBlob(new Document({sections:[{children}]}));
 }
 
@@ -268,9 +240,7 @@ function generateDocxFromSegments(mainHeader, segments) {
 function getFilteredFiles() {
     let list = files.filter(f => f.folderId === currentFolderId);
     const keyword = document.getElementById('searchInput').value.toLowerCase().trim();
-    if(keyword) {
-        list = list.filter(f => f.name.toLowerCase().includes(keyword));
-    }
+    if(keyword) list = list.filter(f => f.name.toLowerCase().includes(keyword));
     list.sort((a,b) => getChapterNum(a.name) - getChapterNum(b.name));
     return list;
 }
@@ -279,115 +249,66 @@ function renderFiles() {
     const list = getFilteredFiles();
     els.fileCount.innerText = list.length;
     els.fileGrid.innerHTML = '';
-
     list.forEach(f => {
         const card = document.createElement('div');
         card.className = `file-card ${f.selected ? 'selected' : ''}`;
-        
         card.onclick = (e) => {
             if(e.target.closest('.card-actions') || e.target.closest('.card-body')) return;
-            f.selected = !f.selected;
-            renderFiles();
+            f.selected = !f.selected; renderFiles();
         };
-
         card.innerHTML = `
-            <div class="card-header">
-                <input type="checkbox" class="card-chk" ${f.selected?'checked':''}>
-                <div class="card-icon">📄</div>
-            </div>
-            <div class="card-body" title="Xem trước">
-                <div class="file-name">${f.name}</div>
-                <div class="file-info">
-                    <span class="tag-wc">${f.wordCount} words</span>
-                </div>
-            </div>
-            <div class="card-actions">
-                <button class="btn-small view" onclick="event.stopPropagation(); openPreview(${f.id})">👁 Xem</button>
-                <button class="btn-small del" onclick="event.stopPropagation(); deleteOne(${f.id})">🗑 Xóa</button>
-            </div>
+            <div class="card-header"><input type="checkbox" class="card-chk" ${f.selected?'checked':''}><div class="card-icon">📄</div></div>
+            <div class="card-body" title="Xem trước"><div class="file-name">${f.name}</div><div class="file-info"><span class="tag-wc">${f.wordCount} words</span></div></div>
+            <div class="card-actions"><button class="btn-small view" onclick="event.stopPropagation(); openPreview(${f.id})">👁 Xem</button><button class="btn-small del" onclick="event.stopPropagation(); deleteOne(${f.id})">🗑 Xóa</button></div>
         `;
-        
         const chk = card.querySelector('.card-chk');
-        chk.onclick = (e) => e.stopPropagation();
-        chk.onchange = () => { f.selected = chk.checked; renderFiles(); };
-        
-        const body = card.querySelector('.card-body');
-        body.onclick = (e) => { e.stopPropagation(); openPreview(f.id); };
-
+        chk.onclick = e => e.stopPropagation(); chk.onchange = () => { f.selected = chk.checked; renderFiles(); };
+        card.querySelector('.card-body').onclick = e => { e.stopPropagation(); openPreview(f.id); };
         els.fileGrid.appendChild(card);
     });
 }
 
-// --- ACTIONS & PREVIEW ---
+function renderFolders() {
+    els.folderSelect.innerHTML = '';
+    folders.forEach(f => {
+        const opt = document.createElement('option');
+        opt.value = f.id; opt.innerText = f.name;
+        if(f.id === currentFolderId) opt.selected = true;
+        els.folderSelect.appendChild(opt);
+    });
+}
+
+// --- ACTIONS ---
 window.openPreview = (id) => {
-    const f = files.find(x=>x.id===id);
-    if(!f) return;
-    previewFileId = id;
-    
-    const list = getFilteredFiles();
-    const idx = list.findIndex(x=>x.id===id);
-    
-    els.previewTitle.innerText = f.name;
-    document.querySelector('.modal-nav span').innerText = `${idx + 1}/${list.length}`;
+    const f = files.find(x=>x.id===id); if(!f) return; previewFileId = id;
+    const list = getFilteredFiles(); const idx = list.findIndex(x=>x.id===id);
+    els.previewTitle.innerText = f.name; document.querySelector('.modal-nav span').innerText = `${idx+1}/${list.length}`;
     els.previewDocHeader.innerText = f.headerInDoc;
-    
     let content = "";
-    if(f.segments) {
-        f.segments.forEach(seg => {
-            seg.lines.forEach(line => {
-                content += `<p>${line}</p>`;
-            });
-        });
-    } else {
-        content = f.rawContent.split('\n').map(l=>`<p>${l}</p>`).join('');
-    }
-    
-    els.previewBody.innerHTML = content;
-    els.previewModal.classList.add('show');
+    if(f.segments) f.segments.forEach(seg => seg.lines.forEach(l => content += `<p>${l}</p>`));
+    else content = f.rawContent.split('\n').map(l=>`<p>${l}</p>`).join('');
+    els.previewBody.innerHTML = content; els.previewModal.classList.add('show');
 }
 window.closePreview = () => els.previewModal.classList.remove('show');
 window.prevChapter = () => navChapter(-1);
 window.nextChapter = () => navChapter(1);
+function navChapter(d) { const l = getFilteredFiles(); const i = l.findIndex(x=>x.id===previewFileId); if(i!==-1 && l[i+d]) openPreview(l[i+d].id); else toast(d>0?"Hết":"Đầu"); }
 
-function navChapter(dir) {
-    const list = getFilteredFiles();
-    const idx = list.findIndex(x=>x.id===previewFileId);
-    if(idx !== -1 && list[idx+dir]) openPreview(list[idx+dir].id);
-    else toast(dir>0 ? "Hết danh sách" : "Đầu danh sách");
-}
-
+window.downloadOne = (id) => { const f=files.find(x=>x.id===id); if(f&&f.blob) saveAs(f.blob, f.name); }
 window.deleteOne = (id) => { if(confirm('Xóa?')) { delDB('files', id); files=files.filter(f=>f.id!==id); renderFiles(); } }
-
-function deleteBatch() {
-    const s = getFilteredFiles().filter(f => f.selected);
-    if(confirm(`Xóa ${s.length} file?`)) {
-        s.forEach(f=>delDB('files',f.id));
-        files = files.filter(f=>!f.selected || f.folderId!==currentFolderId);
-        renderFiles();
+function deleteBatch() { const s = getFilteredFiles().filter(f=>f.selected); if(confirm(`Xóa ${s.length}?`)) { s.forEach(f=>delDB('files',f.id)); files=files.filter(f=>!f.selected || f.folderId!==currentFolderId); renderFiles(); } }
+function downloadBatchZip() { const s = getFilteredFiles().filter(f=>f.selected); if(!s.length) return toast("Chưa chọn"); const z = new JSZip(); s.forEach(f=>z.file(f.name, f.blob)); z.generateAsync({type:"blob"}).then(c=>saveAs(c, `Batch_${Date.now()}.zip`)); }
+async function downloadBatchDirect() { const s = getFilteredFiles().filter(f=>f.selected); if(!s.length) return toast("Chưa chọn"); toast(`Tải ${s.length} file...`); for(let i=0;i<s.length;i++) { if(s[i].blob) { saveAs(s[i].blob, s[i].name); await new Promise(r=>setTimeout(r,200)); } } }
+function createFolder() { const n = prompt("Tên:"); if(n){const f={id:Date.now().toString(),name:n}; folders.push(f); saveDB('folders',f); currentFolderId=f.id; renderFolders(); renderFiles();} }
+function deleteCurrentFolder() {
+    if(currentFolderId==='root') return toast("Lỗi: Root Folder");
+    if(confirm("Xóa folder?")) {
+        files.filter(f=>f.folderId===currentFolderId).forEach(f=>delDB('files',f.id));
+        files = files.filter(f=>f.folderId!==currentFolderId);
+        delDB('folders', currentFolderId); folders=folders.filter(f=>f.id!==currentFolderId);
+        currentFolderId='root'; renderFolders(); renderFiles();
     }
 }
-
-function downloadBatchZip() {
-    const s = getFilteredFiles().filter(f => f.selected);
-    if(!s.length) return toast("Chưa chọn file");
-    const z = new JSZip();
-    s.forEach(f => z.file(f.name, f.blob));
-    z.generateAsync({type:"blob"}).then(c=>saveAs(c, `Batch_${Date.now()}.zip`));
-}
-
-async function downloadBatchDirect() {
-    const s = getFilteredFiles().filter(f => f.selected);
-    if(!s.length) return toast("Chưa chọn file");
-    toast(`Đang tải ${s.length} file...`);
-    for (let i = 0; i < s.length; i++) {
-        const f = s[i];
-        if (f.blob) {
-            saveAs(f.blob, f.name);
-            await new Promise(r => setTimeout(r, 200));
-        }
-    }
-}
-
 function toast(m) { els.toast.innerText = m; els.toast.classList.add('show'); setTimeout(()=>els.toast.classList.remove('show'), 2000); }
 
 init();
