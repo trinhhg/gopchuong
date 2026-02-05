@@ -1,10 +1,10 @@
 // CONFIG
-const DB_NAME = 'AutoPilotV21'; // DB Mới để clean dữ liệu cũ
+const DB_NAME = 'AutoPilotV22'; // Nâng version DB để tạo bảng History mới
 const DB_VERSION = 1;
 let db = null;
 let files = [];
 let folders = [];
-let historyLogs = [];
+let historyLogs = []; // Lưu trong RAM để hiển thị
 let currentFolderId = 'root';
 let currentView = 'manager';
 let previewFileId = null;
@@ -21,13 +21,11 @@ const els = {
     btnDeleteFolder: document.getElementById('btnDeleteFolder'),
     searchInput: document.getElementById('searchInput'),
     
-    // Nav
     btnViewFiles: document.getElementById('btnViewFiles'),
     btnViewHistory: document.getElementById('btnViewHistory'),
     viewManager: document.getElementById('viewManager'),
     viewHistory: document.getElementById('viewHistory'),
     
-    // Manager
     fileGrid: document.getElementById('fileGrid'),
     fileCount: document.getElementById('fileCount'),
     selectAll: document.getElementById('selectAll'),
@@ -35,19 +33,16 @@ const els = {
     btnDownloadDirect: document.getElementById('btnDownloadDirect'),
     btnDeleteBatch: document.getElementById('btnDeleteBatch'),
     
-    // History
-    historyFilter: document.getElementById('historyFilter'), // MỚI
+    historyFilter: document.getElementById('historyFilter'),
     historyTableBody: document.getElementById('historyTableBody'),
     emptyHistory: document.getElementById('emptyHistory'),
     btnClearHistory: document.getElementById('btnClearHistory'),
     
-    // Logic
     chapterTitle: document.getElementById('chapterTitle'),
     autoGroup: document.getElementById('autoGroup'),
     btnMerge: document.getElementById('btnMerge'),
     editor: document.getElementById('editor'),
     
-    // Modal
     previewModal: document.getElementById('previewModal'),
     previewTitle: document.getElementById('previewTitle'),
     previewDocHeader: document.getElementById('previewDocHeader'),
@@ -56,17 +51,38 @@ const els = {
     toast: document.getElementById('toast')
 };
 
-// --- LOGGING ---
+// --- LOGGING SYSTEM (LƯU DB) ---
 function addToLog(msg, type = 'success') {
-    const time = new Date().toLocaleTimeString('vi-VN', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
-    historyLogs.unshift({ msg, type, time, id: Date.now() });
-    if(historyLogs.length > 200) historyLogs.pop();
+    const now = new Date();
+    const time = now.toLocaleTimeString('vi-VN', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    
+    const logItem = {
+        id: Date.now(), // Unique ID
+        time: time,
+        msg: msg,
+        type: type,
+        timestamp: now.getTime() // Để sort
+    };
+
+    // 1. Lưu vào Array RAM
+    historyLogs.unshift(logItem);
+    
+    // 2. Lưu vào IndexedDB (Để F5 không mất)
+    saveDB('history', logItem);
+
+    // 3. Giới hạn hiển thị và lưu trữ (Giữ 500 dòng mới nhất)
+    if(historyLogs.length > 500) {
+        const removed = historyLogs.pop();
+        delDB('history', removed.id); // Xóa trong DB luôn cho nhẹ
+    }
+    
+    // 4. Render nếu đang xem
     if(currentView === 'history') renderHistory();
 }
 
 function renderHistory() {
     const keyword = els.searchInput.value.toLowerCase();
-    const filterType = els.historyFilter.value; // Lấy giá trị filter
+    const filterType = els.historyFilter.value; 
 
     const filtered = historyLogs.filter(log => {
         const matchSearch = log.msg.toLowerCase().includes(keyword);
@@ -109,10 +125,51 @@ function switchView(view) {
         renderHistory();
     }
     els.searchInput.value = '';
-    els.searchInput.placeholder = view === 'manager' ? "Tìm tên file..." : "Tìm nội dung...";
+    els.searchInput.placeholder = view === 'manager' ? "Tìm tên file..." : "Tìm nhật ký...";
 }
 
-// --- INIT ---
+// --- DB INIT ---
+function initDB() {
+    return new Promise(resolve => {
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = e => {
+            const d = e.target.result;
+            if(!d.objectStoreNames.contains('files')) d.createObjectStore('files', {keyPath: 'id'});
+            if(!d.objectStoreNames.contains('folders')) d.createObjectStore('folders', {keyPath: 'id'});
+            // THÊM BẢNG HISTORY
+            if(!d.objectStoreNames.contains('history')) d.createObjectStore('history', {keyPath: 'id'});
+        };
+        req.onsuccess = e => { db = e.target.result; loadData().then(resolve); };
+    });
+}
+
+async function loadData() {
+    // Load Files & Folders
+    files = await getAll('files');
+    folders = await getAll('folders');
+    
+    // Load History & Sort (Mới nhất lên đầu)
+    const logs = await getAll('history');
+    historyLogs = logs.sort((a,b) => b.timestamp - a.timestamp);
+
+    if(!folders.find(f=>f.id==='root')) {
+        folders.push({id:'root', name:'Thư mục chính'});
+        saveDB('folders', {id:'root', name:'Thư mục chính'});
+    }
+    renderFolders();
+    renderFiles();
+}
+
+// --- UTILS DB ---
+function getAll(s) { return new Promise(r => db.transaction(s,'readonly').objectStore(s).getAll().onsuccess=e=>r(e.target.result||[])); }
+function saveDB(s, i) { db.transaction(s,'readwrite').objectStore(s).put(i); }
+function delDB(s, id) { db.transaction(s,'readwrite').objectStore(s).delete(id); }
+function clearStore(s) { 
+    const tx = db.transaction(s, 'readwrite');
+    tx.objectStore(s).clear();
+}
+
+// --- INIT APP ---
 async function init() {
     await initDB();
     
@@ -127,8 +184,6 @@ async function init() {
         if(currentView === 'manager') renderFiles();
         else renderHistory();
     };
-
-    // Event lọc lịch sử
     els.historyFilter.onchange = renderHistory;
 
     els.selectAll.onchange = (e) => {
@@ -140,10 +195,14 @@ async function init() {
     els.btnDownloadDirect.onclick = downloadBatchDirect;
     els.btnDeleteBatch.onclick = deleteBatch;
     
+    // Clear History Button
     els.btnClearHistory.onclick = () => {
-        historyLogs = [];
-        renderHistory();
-        toast("Đã xóa sạch lịch sử");
+        if(confirm("Xóa toàn bộ lịch sử?")) {
+            historyLogs = [];
+            clearStore('history'); // Xóa trong DB
+            renderHistory();
+            toast("Đã xóa sạch lịch sử");
+        }
     };
 
     els.btnMerge.onclick = () => merge(true);
@@ -157,7 +216,7 @@ async function init() {
     });
 }
 
-// --- MERGE LOGIC ---
+// --- MERGE LOGIC (DUAL LOGGING) ---
 async function merge(autoClear) {
     const content = els.editor.value;
     if(!content.trim()) return;
@@ -166,7 +225,8 @@ async function merge(autoClear) {
     let safeName = inputTitle.replace(/[:*?"<>|]/g, " -").trim();
     let fileName = `${safeName}.docx`;
     
-    addToLog(`Nhận tín hiệu: ${inputTitle}`, 'info');
+    // Log kỹ thuật (ẩn bớt nếu cần, ở đây để info)
+    // addToLog(`Nhận tín hiệu: ${inputTitle}`, 'info');
 
     const lines = cleanContent(content);
     if(lines.length === 0) return;
@@ -185,18 +245,23 @@ async function merge(autoClear) {
         if(!targetFile.segments) targetFile.segments = [];
         
         const existingIndex = targetFile.segments.findIndex(s => s.idSort === chapterNum);
+        
         if (existingIndex !== -1) {
+            // Update
             targetFile.segments[existingIndex] = segment;
-            addToLog(`Cập nhật nội dung: ${inputTitle}`, 'success');
-            toast(`Đã cập nhật: ${inputTitle}`);
+            addToLog(`Cập nhật nội dung: ${inputTitle}`, 'warn'); // Màu cam cho update
+            toast(`Cập nhật: ${inputTitle}`);
         } else {
+            // Append
             targetFile.segments.push(segment);
-            addToLog(`Gộp thêm: ${inputTitle}`, 'success');
-            toast(`Đã nối thêm: ${inputTitle}`);
+            // LOG QUAN TRỌNG: Gộp thêm
+            addToLog(`Gộp thêm: ${inputTitle}`, 'success'); 
+            toast(`Gộp thêm: ${inputTitle}`);
         }
 
         targetFile.segments.sort((a,b) => a.idSort - b.idSort);
         
+        // Rebuild content
         let allText = "";
         targetFile.segments.forEach(seg => { allText += seg.lines.join('\n') + '\n'; });
 
@@ -206,7 +271,9 @@ async function merge(autoClear) {
         
         targetFile.blob = await generateDocxFromSegments(targetFile.headerInDoc, targetFile.segments);
         saveDB('files', targetFile);
+        
     } else {
+        // CREATE NEW FILE
         const wc = countWords(inputTitle + " " + content);
         targetFile = {
             id: Date.now(), name: fileName, folderId: currentFolderId,
@@ -218,7 +285,15 @@ async function merge(autoClear) {
         files.push(targetFile);
         saveDB('files', targetFile);
         
-        addToLog(`Tạo file mới: ${fileName}`, 'success');
+        // LOG KÉP CHO TRƯỜNG HỢP TẠO MỚI TỪ SUB-CHAPTER
+        // Log 1: Báo tạo file gốc
+        addToLog(`Tạo file mới: ${fileName}`, 'info'); 
+        
+        // Log 2: Báo chính xác chương nào vừa được nhét vào
+        // Ví dụ: fileName là "Chương 1.docx", inputTitle là "Chương 1.1"
+        // Thì log này xác nhận Chương 1.1 đã nằm trong file Chương 1
+        addToLog(`Gộp thêm: ${inputTitle}`, 'success');
+        
         toast(`Đã tạo: ${fileName}`);
     }
 
@@ -230,51 +305,6 @@ async function merge(autoClear) {
 
     if(autoClear) els.editor.value = '';
     if(currentView === 'manager') renderFiles();
-}
-
-// --- DB & UTILS ---
-function initDB() {
-    return new Promise(resolve => {
-        const req = indexedDB.open(DB_NAME, DB_VERSION);
-        req.onupgradeneeded = e => {
-            const d = e.target.result;
-            if(!d.objectStoreNames.contains('files')) d.createObjectStore('files', {keyPath: 'id'});
-            if(!d.objectStoreNames.contains('folders')) d.createObjectStore('folders', {keyPath: 'id'});
-        };
-        req.onsuccess = e => { db = e.target.result; loadData().then(resolve); };
-    });
-}
-async function loadData() {
-    files = await getAll('files');
-    folders = await getAll('folders');
-    if(!folders.find(f=>f.id==='root')) {
-        folders.push({id:'root', name:'Thư mục chính'});
-        saveDB('folders', {id:'root', name:'Thư mục chính'});
-    }
-    renderFolders(); renderFiles();
-}
-function getAll(s) { return new Promise(r => db.transaction(s,'readonly').objectStore(s).getAll().onsuccess=e=>r(e.target.result||[])); }
-function saveDB(s, i) { db.transaction(s,'readwrite').objectStore(s).put(i); }
-function delDB(s, id) { db.transaction(s,'readwrite').objectStore(s).delete(id); }
-
-function renderFolders() {
-    els.folderSelect.innerHTML = '';
-    folders.forEach(f => {
-        const opt = document.createElement('option');
-        opt.value = f.id; opt.innerText = f.name;
-        if(f.id === currentFolderId) opt.selected = true;
-        els.folderSelect.appendChild(opt);
-    });
-}
-function createFolder() { const n = prompt("Tên:"); if(n){const f={id:Date.now().toString(),name:n}; folders.push(f); saveDB('folders',f); currentFolderId=f.id; renderFolders(); renderFiles();} }
-function deleteCurrentFolder() {
-    if(currentFolderId==='root') return toast("Lỗi: Root");
-    if(confirm("Xóa folder?")) {
-        files.filter(f=>f.folderId===currentFolderId).forEach(f=>delDB('files',f.id));
-        files = files.filter(f=>f.folderId!==currentFolderId);
-        delDB('folders', currentFolderId); folders=folders.filter(f=>f.id!==currentFolderId);
-        currentFolderId='root'; renderFolders(); renderFiles();
-    }
 }
 
 function generateDocxFromSegments(mainHeader, segments) {
@@ -323,6 +353,16 @@ function renderFiles() {
     });
 }
 
+function renderFolders() {
+    els.folderSelect.innerHTML = '';
+    folders.forEach(f => {
+        const opt = document.createElement('option');
+        opt.value = f.id; opt.innerText = f.name;
+        if(f.id === currentFolderId) opt.selected = true;
+        els.folderSelect.appendChild(opt);
+    });
+}
+
 window.openPreview = (id) => {
     const f = files.find(x=>x.id===id); if(!f) return; previewFileId = id;
     const list = getFilteredFiles(); const idx = list.findIndex(x=>x.id===id);
@@ -343,6 +383,16 @@ window.deleteOne = (id) => { if(confirm('Xóa?')) { delDB('files', id); files=fi
 function deleteBatch() { const s = getFilteredFiles().filter(f=>f.selected); if(confirm(`Xóa ${s.length}?`)) { s.forEach(f=>delDB('files',f.id)); files=files.filter(f=>!f.selected || f.folderId!==currentFolderId); renderFiles(); } }
 function downloadBatchZip() { const s = getFilteredFiles().filter(f=>f.selected); if(!s.length) return toast("Chưa chọn"); const z = new JSZip(); s.forEach(f=>z.file(f.name, f.blob)); z.generateAsync({type:"blob"}).then(c=>saveAs(c, `Batch_${Date.now()}.zip`)); }
 async function downloadBatchDirect() { const s = getFilteredFiles().filter(f=>f.selected); if(!s.length) return toast("Chưa chọn"); toast(`Tải ${s.length} file...`); for(let i=0;i<s.length;i++) { if(s[i].blob) { saveAs(s[i].blob, s[i].name); await new Promise(r=>setTimeout(r,200)); } } }
+function createFolder() { const n = prompt("Tên:"); if(n){const f={id:Date.now().toString(),name:n}; folders.push(f); saveDB('folders',f); currentFolderId=f.id; renderFolders(); renderFiles();} }
+function deleteCurrentFolder() {
+    if(currentFolderId==='root') return toast("Lỗi: Root");
+    if(confirm("Xóa folder?")) {
+        files.filter(f=>f.folderId===currentFolderId).forEach(f=>delDB('files',f.id));
+        files = files.filter(f=>f.folderId!==currentFolderId);
+        delDB('folders', currentFolderId); folders=folders.filter(f=>f.id!==currentFolderId);
+        currentFolderId='root'; renderFolders(); renderFiles();
+    }
+}
 function toast(m) { els.toast.innerText = m; els.toast.classList.add('show'); setTimeout(()=>els.toast.classList.remove('show'), 2000); }
 
 init();
