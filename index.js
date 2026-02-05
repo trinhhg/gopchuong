@@ -1,12 +1,12 @@
 // CONFIG
-const DB_NAME = 'AutoPilotV20';
+const DB_NAME = 'AutoPilotV21'; // DB Mới để clean dữ liệu cũ
 const DB_VERSION = 1;
 let db = null;
 let files = [];
 let folders = [];
-let historyLogs = []; // Array chứa lịch sử
+let historyLogs = [];
 let currentFolderId = 'root';
-let currentView = 'manager'; // 'manager' | 'history'
+let currentView = 'manager';
 let previewFileId = null;
 
 // --- HELPERS ---
@@ -21,13 +21,13 @@ const els = {
     btnDeleteFolder: document.getElementById('btnDeleteFolder'),
     searchInput: document.getElementById('searchInput'),
     
-    // View Switchers
+    // Nav
     btnViewFiles: document.getElementById('btnViewFiles'),
     btnViewHistory: document.getElementById('btnViewHistory'),
     viewManager: document.getElementById('viewManager'),
     viewHistory: document.getElementById('viewHistory'),
     
-    // Manager DOM
+    // Manager
     fileGrid: document.getElementById('fileGrid'),
     fileCount: document.getElementById('fileCount'),
     selectAll: document.getElementById('selectAll'),
@@ -35,12 +35,13 @@ const els = {
     btnDownloadDirect: document.getElementById('btnDownloadDirect'),
     btnDeleteBatch: document.getElementById('btnDeleteBatch'),
     
-    // History DOM
+    // History
+    historyFilter: document.getElementById('historyFilter'), // MỚI
     historyTableBody: document.getElementById('historyTableBody'),
     emptyHistory: document.getElementById('emptyHistory'),
     btnClearHistory: document.getElementById('btnClearHistory'),
     
-    // Hidden Logic
+    // Logic
     chapterTitle: document.getElementById('chapterTitle'),
     autoGroup: document.getElementById('autoGroup'),
     btnMerge: document.getElementById('btnMerge'),
@@ -55,21 +56,23 @@ const els = {
     toast: document.getElementById('toast')
 };
 
-// --- LOGGING SYSTEM (ARRAY BASED) ---
+// --- LOGGING ---
 function addToLog(msg, type = 'success') {
     const time = new Date().toLocaleTimeString('vi-VN', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
     historyLogs.unshift({ msg, type, time, id: Date.now() });
-    
-    // Giới hạn 100 logs
-    if(historyLogs.length > 100) historyLogs.pop();
-    
-    // Nếu đang ở trang History thì render lại ngay
+    if(historyLogs.length > 200) historyLogs.pop();
     if(currentView === 'history') renderHistory();
 }
 
 function renderHistory() {
     const keyword = els.searchInput.value.toLowerCase();
-    const filtered = historyLogs.filter(log => log.msg.toLowerCase().includes(keyword));
+    const filterType = els.historyFilter.value; // Lấy giá trị filter
+
+    const filtered = historyLogs.filter(log => {
+        const matchSearch = log.msg.toLowerCase().includes(keyword);
+        const matchType = filterType === 'all' || log.type === filterType;
+        return matchSearch && matchType;
+    });
     
     els.historyTableBody.innerHTML = '';
     
@@ -92,45 +95,42 @@ function renderHistory() {
 // --- VIEW SWITCHING ---
 function switchView(view) {
     currentView = view;
-    // Update Active Button
     if(view === 'manager') {
         els.btnViewFiles.classList.add('active');
         els.btnViewHistory.classList.remove('active');
         els.viewManager.classList.add('active');
         els.viewHistory.classList.remove('active');
-        renderFiles(); // Re-render logic
+        renderFiles();
     } else {
         els.btnViewHistory.classList.add('active');
         els.btnViewFiles.classList.remove('active');
         els.viewHistory.classList.add('active');
         els.viewManager.classList.remove('active');
-        renderHistory(); // Re-render logic
+        renderHistory();
     }
-    // Reset search when switching
     els.searchInput.value = '';
-    els.searchInput.placeholder = view === 'manager' ? "Tìm tên file..." : "Tìm nhật ký...";
+    els.searchInput.placeholder = view === 'manager' ? "Tìm tên file..." : "Tìm nội dung...";
 }
 
 // --- INIT ---
 async function init() {
     await initDB();
     
-    // Events Folder
     els.btnNewFolder.onclick = createFolder;
     els.btnDeleteFolder.onclick = deleteCurrentFolder;
     els.folderSelect.onchange = (e) => { currentFolderId = e.target.value; renderFiles(); };
 
-    // Events Views
     els.btnViewFiles.onclick = () => switchView('manager');
     els.btnViewHistory.onclick = () => switchView('history');
     
-    // Search Event
     els.searchInput.oninput = () => {
         if(currentView === 'manager') renderFiles();
         else renderHistory();
     };
 
-    // Manager Events
+    // Event lọc lịch sử
+    els.historyFilter.onchange = renderHistory;
+
     els.selectAll.onchange = (e) => {
         const list = getFilteredFiles();
         list.forEach(f => f.selected = e.target.checked);
@@ -140,7 +140,6 @@ async function init() {
     els.btnDownloadDirect.onclick = downloadBatchDirect;
     els.btnDeleteBatch.onclick = deleteBatch;
     
-    // History Events
     els.btnClearHistory.onclick = () => {
         historyLogs = [];
         renderHistory();
@@ -173,12 +172,7 @@ async function merge(autoClear) {
     if(lines.length === 0) return;
 
     const chapterNum = getChapterNum(inputTitle);
-    
-    let segment = {
-        idSort: chapterNum,
-        lines: lines,
-        header: inputTitle
-    };
+    let segment = { idSort: chapterNum, lines: lines, header: inputTitle };
 
     if(els.autoGroup.checked) {
         const match = inputTitle.match(/(?:Chương|Chapter|Hồi)\s*(\d+)/i);
@@ -193,7 +187,7 @@ async function merge(autoClear) {
         const existingIndex = targetFile.segments.findIndex(s => s.idSort === chapterNum);
         if (existingIndex !== -1) {
             targetFile.segments[existingIndex] = segment;
-            addToLog(`Update nội dung: ${inputTitle}`, 'success');
+            addToLog(`Cập nhật nội dung: ${inputTitle}`, 'success');
             toast(`Đã cập nhật: ${inputTitle}`);
         } else {
             targetFile.segments.push(segment);
@@ -204,9 +198,7 @@ async function merge(autoClear) {
         targetFile.segments.sort((a,b) => a.idSort - b.idSort);
         
         let allText = "";
-        targetFile.segments.forEach(seg => {
-            allText += seg.lines.join('\n') + '\n';
-        });
+        targetFile.segments.forEach(seg => { allText += seg.lines.join('\n') + '\n'; });
 
         targetFile.headerInDoc = targetFile.name.replace('.docx','');
         targetFile.wordCount = countWords(targetFile.headerInDoc + " " + allText);
@@ -214,7 +206,6 @@ async function merge(autoClear) {
         
         targetFile.blob = await generateDocxFromSegments(targetFile.headerInDoc, targetFile.segments);
         saveDB('files', targetFile);
-        
     } else {
         const wc = countWords(inputTitle + " " + content);
         targetFile = {
@@ -238,8 +229,6 @@ async function merge(autoClear) {
     }
 
     if(autoClear) els.editor.value = '';
-    
-    // Chỉ render nếu đang ở view manager
     if(currentView === 'manager') renderFiles();
 }
 
