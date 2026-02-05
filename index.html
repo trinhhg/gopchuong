@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Writer Core V16</title>
+    <title>Writer Core V19</title>
     <link rel="stylesheet" href="index.css">
     <script src="https://unpkg.com/docx@7.1.0/build/index.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
@@ -20,7 +20,7 @@
 
 <div class="dashboard">
     <header class="top-bar">
-        <div class="brand">📂 MANAGER V16</div>
+        <div class="brand">📂 MANAGER V19</div>
         
         <div class="folder-controls">
             <select id="folderSelect" class="folder-select"></select>
@@ -31,6 +31,19 @@
         <div class="search-box">
             <span class="search-icon">🔍</span>
             <input type="text" id="searchInput" placeholder="Tìm tên file...">
+        </div>
+
+        <div class="history-wrapper">
+            <button id="btnHistory" class="btn-icon" title="Lịch sử hoạt động">🕒</button>
+            <div id="historyPanel" class="history-dropdown">
+                <div class="history-header">
+                    <span>Nhật ký hoạt động</span>
+                    <button id="btnClearHistory" class="btn-text-small">Xóa hết</button>
+                </div>
+                <div id="historyList" class="history-list">
+                    <div class="empty-log">Chưa có hoạt động nào</div>
+                </div>
+            </div>
         </div>
 
         <div class="settings">
