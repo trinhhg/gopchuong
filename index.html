@@ -3,99 +3,70 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Novel Studio V14</title>
+    <title>Auto Manager V15</title>
     <link rel="stylesheet" href="index.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:wght@300;400;700&display=swap" rel="stylesheet">
-    
     <script src="https://unpkg.com/docx@7.1.0/build/index.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Merriweather:wght@300;700&display=swap" rel="stylesheet">
 </head>
 <body>
 
-<div class="portal-layout">
-    <aside class="sidebar">
-        <div class="sidebar-header">
-            <div class="app-logo">📖 NOVEL STUDIO</div>
-            <div class="folder-action-area">
-                <select id="folderSelect" class="folder-dropdown"></select>
-                <div class="folder-btn-group">
-                    <button id="btnNewFolder" class="btn-icon" title="Thêm tập/quyển mới">+</button>
-                    <button id="btnDeleteFolder" class="btn-icon danger" title="Xóa tập hiện tại">-</button>
-                </div>
-            </div>
+<div class="engine-room">
+    <input type="text" id="chapterTitle" value="Chương 1">
+    <textarea id="editor"></textarea>
+    <button id="btnMerge">Gộp Ẩn</button>
+</div>
+
+<div class="dashboard">
+    <header class="top-bar">
+        <div class="brand">📂 MANAGER V15</div>
+        
+        <div class="folder-controls">
+            <select id="folderSelect" class="folder-select"></select>
+            <button id="btnNewFolder" class="btn-icon" title="Thêm thư mục">+</button>
+            <button id="btnDeleteFolder" class="btn-icon danger" title="Xóa thư mục">-</button>
         </div>
 
-        <div class="sidebar-body">
-            <div class="list-header">
-                <span class="list-title">MỤC LỤC CHƯƠNG (<span id="fileCount">0</span>)</span>
-                <label class="check-all-wrap">
-                    <input type="checkbox" id="selectAll"> Chọn tất cả
+        <div class="settings">
+            <label class="toggle-switch">
+                <input type="checkbox" id="autoGroup" checked>
+                <span class="slider"></span>
+                <span class="label">Gộp thông minh (1.x ➜ 1)</span>
+            </label>
+        </div>
+    </header>
+
+    <main class="content-area">
+        <div class="toolbar">
+            <div class="left-tools">
+                <label class="chk-all">
+                    <input type="checkbox" id="selectAll"> Chọn tất cả (<span id="fileCount">0</span> file)
                 </label>
             </div>
-            
-            <div id="fileList" class="chapter-list">
-                </div>
-        </div>
-
-        <div class="sidebar-footer">
-            <button id="btnDownloadBatch" class="btn-primary full">📥 Tải ZIP đã chọn</button>
-            <button id="btnDeleteBatch" class="btn-text danger">Xóa đã chọn</button>
-        </div>
-    </aside>
-
-    <main class="main-content">
-        <header class="top-toolbar">
-            <div class="left-tools">
-                <button id="toggleSidebar" class="btn-menu">☰</button>
-                <div class="input-wrapper">
-                    <span class="input-label">TIÊU ĐỀ CHƯƠNG</span>
-                    <input type="text" id="chapterTitle" value="Chương 1" class="main-input">
-                </div>
-            </div>
-            
             <div class="right-tools">
-                <div class="toggle-switch">
-                    <input type="checkbox" id="autoGroup" checked>
-                    <label for="autoGroup">Gộp thông minh (1.x ➝ 1)</label>
-                </div>
-                <div class="divider-v"></div>
-                <button id="btnClearOnly" class="btn-outline">Làm mới</button>
-                <button id="btnMerge" class="btn-accent">⚡ GỘP & LƯU</button>
-            </div>
-        </header>
-
-        <div class="editor-stage">
-            <div class="paper-sheet">
-                <div class="paper-meta">Nội dung đang chờ nhận...</div>
-                <textarea id="editor" placeholder="Bấm F2 bên web truyện để bắn nội dung vào đây..."></textarea>
+                <button id="btnDownloadDirect" class="btn-tool secondary">⬇ Tải Lẻ (No Zip)</button>
+                <button id="btnDownloadBatch" class="btn-tool primary">📦 Tải ZIP</button>
+                <button id="btnDeleteBatch" class="btn-tool danger">🗑 Xóa</button>
             </div>
         </div>
+
+        <div id="fileGrid" class="file-grid">
+            </div>
     </main>
 </div>
 
-<div id="previewModal" class="reader-modal">
-    <div class="reader-container">
-        <div class="reader-header">
-            <button onclick="closePreview()" class="btn-back">✕ Đóng</button>
-            <h3 id="previewModalTitle" class="story-title">Tên Chương</h3>
-            <div class="reader-settings">
-                </div>
+<div id="previewModal" class="modal-overlay">
+    <div class="modal-window">
+        <div class="modal-header">
+            <h3 id="previewTitle">Tên File</h3>
+            <button onclick="closePreview()" class="btn-close">✕</button>
         </div>
-
-        <div class="reader-viewport">
-            <div class="reader-paper">
-                <h1 id="previewDocHeader" class="chapter-header">Header Chương</h1>
-                <div class="chapter-content" id="previewBody">
-                    Nội dung chương sẽ hiện ở đây...
-                </div>
+        <div class="modal-body">
+            <div class="paper">
+                <h1 id="previewDocHeader">Header</h1>
+                <div id="previewBody">Content...</div>
             </div>
-        </div>
-
-        <div class="reader-footer">
-            <button onclick="prevChapter()" class="nav-chapter">❮ Chương trước</button>
-            <span id="readerPageNum">1/10</span>
-            <button onclick="nextChapter()" class="nav-chapter">Chương sau ❯</button>
         </div>
     </div>
 </div>
