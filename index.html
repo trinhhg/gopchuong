@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Docx Tool Pro (Auto Group)</title>
+    <title>Gộp Chương Pro (Queue & Preview)</title>
     <link rel="stylesheet" href="index.css">
     <script src="https://unpkg.com/docx@7.1.0/build/index.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
@@ -14,7 +14,7 @@
 <div class="app-layout">
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
-            <span class="brand">✨ DOCX TOOL</span>
+            <span class="brand">✨ AUTO TOOL</span>
             <span class="count-badge" id="fileCount">0</span>
         </div>
 
@@ -34,9 +34,7 @@
     <main class="main-area">
         <div class="top-nav">
             <div class="nav-left">
-                <button class="icon-btn" id="toggleSidebar" title="Menu">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
-                </button>
+                <button class="icon-btn" id="toggleSidebar">☰</button>
                 <div class="tab-group">
                     <button class="tab-pill active" data-tab="editor-view">Soạn thảo</button>
                     <button class="tab-pill" data-tab="manager-view">Quản lý file</button>
@@ -47,16 +45,16 @@
         <div id="editor-view" class="view-content active">
             <div class="toolbar-card">
                 <div class="chapter-info">
-                    <div class="input-box" style="flex: 1; min-width: 250px;">
+                    <div class="input-box" style="flex: 1; min-width: 200px;">
                         <label>Tên Chương</label>
-                        <input type="text" id="chapterTitle" value="Chương 1" placeholder="Nhập tên chương..." style="width: 100%; text-align: left;">
+                        <input type="text" id="chapterTitle" value="Chương 1" style="width: 100%;">
                     </div>
                 </div>
 
                 <div class="action-group">
-                    <div style="display:flex; align-items:center; margin-right:15px; font-size:13px; font-weight:600; color:#4b5563;">
-                        <input type="checkbox" id="autoGroup" checked style="width:16px; height:16px; margin-right:6px; cursor:pointer;">
-                        <label for="autoGroup" style="cursor:pointer; user-select:none;">Gộp 1.x vào 1</label>
+                    <div style="display:flex; align-items:center; margin-right:15px; font-weight:600; font-size:13px;">
+                        <input type="checkbox" id="autoGroup" checked style="width:16px; height:16px; margin-right:6px; cursor: pointer;">
+                        <label for="autoGroup" style="cursor: pointer;">Gộp 1.x vào 1</label>
                     </div>
 
                     <button class="btn-ghost" id="btnClearOnly">Xóa trắng</button>
@@ -65,7 +63,7 @@
             </div>
 
             <div class="editor-wrapper">
-                <textarea id="editor" placeholder="Chờ dữ liệu từ tool F2..."></textarea>
+                <textarea id="editor" placeholder="Chờ dữ liệu từ tool..."></textarea>
             </div>
         </div>
 
@@ -78,6 +76,7 @@
                 <div class="file-table-header">
                     <div class="th-check"><input type="checkbox" id="selectAllManager"></div>
                     <div class="th-name">Tên file</div>
+                    <div class="th-wc">Số từ</div>
                     <div class="th-action">Tác vụ</div>
                 </div>
                 <div class="file-list-body" id="managerList">
@@ -85,6 +84,18 @@
             </div>
         </div>
     </main>
+</div>
+
+<div id="previewModal" class="modal-overlay">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="previewTitle">Tiêu đề chương</h3>
+            <button class="close-modal" onclick="closePreview()">✕</button>
+        </div>
+        <div class="modal-body">
+            <pre id="previewBody"></pre>
+        </div>
+    </div>
 </div>
 
 <div id="toast">Thông báo</div>
