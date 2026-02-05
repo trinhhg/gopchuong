@@ -69,55 +69,80 @@ function init() {
     els.btnDeleteSelected.addEventListener('click', deleteBatch);
 }
 
-// --- LOGIC TÊN FILE ---
-function parseChapterName(inputTitle) {
-    if (!els.autoGroup.checked) return { baseName: inputTitle };
+// --- LOGIC TÊN FILE & GROUP ---
+function parseChapterInfo(inputTitle) {
+    // 1. Xử lý tên file (Windows không cho phép ký tự : * ? " < > |)
+    // Thay dấu : bằng dấu - để lưu file không bị lỗi
+    let safeFileName = inputTitle.replace(/[:*?"<>|]/g, " -").trim();
+
+    // 2. Nếu KHÔNG bật chế độ gộp -> Dùng nguyên tên gốc làm tên file
+    if (!els.autoGroup.checked) {
+        return { 
+            fileName: `${safeFileName}.docx`, 
+            headerTitle: inputTitle, // Trong file vẫn giữ nguyên dấu :
+            baseKey: safeFileName // Key để tìm file cũ
+        };
+    }
     
-    // Regex lấy số: "Chương 1.1" -> "Chương 1"
+    // 3. Nếu BẬT gộp: Tìm số chương (Ví dụ "Chương 186: ABC" -> Group vào "Chương 186")
     const match = inputTitle.match(/(?:Chương|Chapter|Hồi)\s*(\d+)/i);
-    if (match) return { baseName: `Chương ${match[1]}` };
     
-    return { baseName: inputTitle };
+    if (match) {
+        // baseKey là "Chương 186" (để các phần 186.1, 186.2 tự gộp vào đây)
+        const baseKey = `Chương ${match[1]}`;
+        return { 
+            fileName: `${baseKey}.docx`, 
+            headerTitle: inputTitle, // Header lần đầu tạo file sẽ lấy full tên
+            baseKey: baseKey 
+        };
+    }
+    
+    // Trường hợp không tìm thấy số, dùng tên gốc
+    return { 
+        fileName: `${safeFileName}.docx`, 
+        headerTitle: inputTitle,
+        baseKey: safeFileName 
+    };
 }
 
-// --- CORE MERGE (Đã Fix Race Condition) ---
+// --- CORE MERGE ---
 async function merge(autoClear) {
     const contentToAdd = els.editor.value;
     if (!contentToAdd.trim()) return showToast('⚠️ Chưa nhập nội dung!');
 
     const currentTitle = els.chapterTitle.value.trim() || "Chương Mới";
-    const { baseName } = parseChapterName(currentTitle);
-    const fileName = `${baseName}.docx`;
+    
+    // Lấy thông tin tên file và tiêu đề
+    const { fileName, headerTitle, baseKey } = parseChapterInfo(currentTitle);
 
     try {
-        // 1. Tìm file trong bộ nhớ
+        // Tìm xem đã có file nào trùng baseKey (Ví dụ Chương 186) chưa
+        // Lưu ý: Ta tìm theo tên file để gộp
         let targetFile = files.find(f => f.name === fileName);
 
         if (targetFile) {
-            // === NỐI FILE CŨ ===
-            // QUAN TRỌNG: Cập nhật text NGAY LẬP TỨC (Synchronous)
-            // Để lượt bấm tiếp theo nhìn thấy dữ liệu mới ngay
+            // === NỐI VÀO FILE CŨ ===
+            // Cập nhật nội dung ngay lập tức
             targetFile.rawContent += "\n\n" + contentToAdd;
-            targetFile.timestamp = Date.now(); // Đẩy lên đầu danh sách
+            targetFile.timestamp = Date.now();
 
-            showToast(`📝 Đang ghép vào: ${fileName}...`);
+            showToast(`📝 Đang nối vào: ${fileName}...`);
             
-            // Tạo Blob mới (Chạy ngầm, không chặn việc gộp tiếp theo)
-            // Ta dùng hàm generateDocx nhưng không await để chặn luồng chính quá lâu
-            // Nhưng cần await để đảm bảo nút Download tải đúng file mới nhất
-            const newBlob = await generateDocx(baseName, targetFile.rawContent);
+            // Generate lại DOCX (Header giữ nguyên như lúc tạo file đầu tiên)
+            // Lưu ý: Header của file gộp thường là tên ngắn gọn, nhưng ở đây ta giữ header gốc
+            const newBlob = await generateDocx(targetFile.headerInDoc, targetFile.rawContent);
             targetFile.blob = newBlob;
             
             showToast(`✅ Đã lưu xong: ${fileName}`);
 
         } else {
             // === TẠO FILE MỚI ===
-            // QUAN TRỌNG: Tạo slot trong mảng NGAY LẬP TỨC (để chống trùng)
             targetFile = { 
                 id: Date.now(), 
                 name: fileName, 
+                headerInDoc: headerTitle, // Lưu lại tiêu đề gốc để dùng khi regenerate
                 rawContent: contentToAdd, 
-                blob: null, // Blob sẽ có sau
+                blob: null, 
                 selected: false,
                 timestamp: Date.now()
             };
@@ -125,13 +150,13 @@ async function merge(autoClear) {
             
             showToast(`⚡ Đang tạo file: ${fileName}...`);
 
-            const blob = await generateDocx(currentTitle, contentToAdd);
+            const blob = await generateDocx(headerTitle, contentToAdd);
             targetFile.blob = blob;
             
             showToast(`✅ Đã tạo xong: ${fileName}`);
         }
 
-        // 2. Logic tự tăng số chương (1.1 -> 1.2)
+        // Tự động tăng số chương (UX)
         const numberMatch = currentTitle.match(/(\d+)(\.(\d+))?/);
         if (numberMatch) {
             if (numberMatch[2]) {
@@ -146,7 +171,6 @@ async function merge(autoClear) {
 
         if(autoClear) els.editor.value = '';
         
-        // Sắp xếp và Render lại
         files.sort((a, b) => b.timestamp - a.timestamp);
         renderAllLists();
 
@@ -156,31 +180,42 @@ async function merge(autoClear) {
     }
 }
 
-// --- DOCX GENERATOR ---
+// --- DOCX GENERATOR (FORMAT CHUẨN CALIBRI 16) ---
 function generateDocx(titleText, rawContent) {
-    const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docx;
+    const { Document, Packer, Paragraph, TextRun } = docx;
+    
+    // CẤU HÌNH FONT & SIZE
     const FONT_NAME = "Calibri";
-    const FONT_SIZE = 32; 
+    const FONT_SIZE = 32; // Trong docx, 32 = 16pt (half-points)
 
-    // Tách dòng
+    // Xử lý nội dung: Tách dòng, xóa khoảng trắng thừa
     const paragraphsRaw = rawContent.split('\n')
         .map(line => line.trim())
         .filter(line => line.length > 0);
 
     const docChildren = [];
 
-    // Header File
+    // 1. TIÊU ĐỀ (Định dạng y hệt body, không in đậm, cùng màu)
     docChildren.push(new Paragraph({
-        children: [new TextRun({ text: titleText, font: FONT_NAME, size: 36, bold: true })],
-        spacing: { after: 400 },
-        heading: HeadingLevel.HEADING_1
+        children: [new TextRun({ 
+            text: titleText, 
+            font: FONT_NAME, 
+            size: FONT_SIZE,
+            color: "000000" // Màu đen
+        })],
+        spacing: { after: 240 } // Cách đoạn 1 dòng (240 twips ~ 12pt)
     }));
 
-    // Body
+    // 2. NỘI DUNG
     paragraphsRaw.forEach(line => {
         docChildren.push(new Paragraph({
-            children: [new TextRun({ text: line, font: FONT_NAME, size: FONT_SIZE })],
-            spacing: { after: 240 }
+            children: [new TextRun({ 
+                text: line, 
+                font: FONT_NAME, 
+                size: FONT_SIZE,
+                color: "000000"
+            })],
+            spacing: { after: 240 } // Tự động tạo khoảng cách 1 dòng trống sau mỗi đoạn
         }));
     });
 
@@ -207,7 +242,6 @@ function renderSidebar() {
         div.onclick = (e) => {
             if(e.target.type !== 'checkbox') toggleSelect(f.id);
         };
-        // Thêm icon trạng thái
         const statusIcon = f.blob ? '📄' : '⏳'; 
         div.innerHTML = `<input type="checkbox" ${f.selected ? 'checked' : ''} onclick="event.stopPropagation(); toggleSelect(${f.id})"><span>${statusIcon} ${f.name}</span>`;
         els.sidebarList.appendChild(div);
@@ -263,8 +297,6 @@ function deleteOne(id) {
 function downloadBatch() {
     const selected = files.filter(f => f.selected);
     if(!selected.length) return showToast('⚠️ Chưa chọn file');
-    
-    // Kiểm tra xem có file nào chưa tạo xong blob không
     if (selected.some(f => !f.blob)) return showToast('⏳ Có file chưa xử lý xong, vui lòng đợi...');
 
     const zip = new JSZip();
