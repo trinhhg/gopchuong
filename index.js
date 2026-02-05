@@ -1,133 +1,154 @@
 // CONFIG
-const DB_NAME = 'AutoPilotV19';
+const DB_NAME = 'AutoPilotV20';
 const DB_VERSION = 1;
 let db = null;
 let files = [];
 let folders = [];
+let historyLogs = []; // Array chứa lịch sử
 let currentFolderId = 'root';
+let currentView = 'manager'; // 'manager' | 'history'
 let previewFileId = null;
 
 // --- HELPERS ---
-function countWords(text) {
-    if (!text || !text.trim()) return 0;
-    return text.trim().split(/\s+/).length;
-}
-function getChapterNum(title) {
-    const match = title.match(/(?:Chương|Chapter|Hồi)\s*(\d+(\.\d+)?)/i);
-    return match ? parseFloat(match[1]) : Date.now();
-}
-function cleanContent(text) {
-    return text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-}
+function countWords(text) { if (!text || !text.trim()) return 0; return text.trim().split(/\s+/).length; }
+function getChapterNum(title) { const match = title.match(/(?:Chương|Chapter|Hồi)\s*(\d+(\.\d+)?)/i); return match ? parseFloat(match[1]) : Date.now(); }
+function cleanContent(text) { return text.split('\n').map(l => l.trim()).filter(l => l.length > 0); }
 
 // --- DOM ---
 const els = {
     folderSelect: document.getElementById('folderSelect'),
     btnNewFolder: document.getElementById('btnNewFolder'),
     btnDeleteFolder: document.getElementById('btnDeleteFolder'),
+    searchInput: document.getElementById('searchInput'),
+    
+    // View Switchers
+    btnViewFiles: document.getElementById('btnViewFiles'),
+    btnViewHistory: document.getElementById('btnViewHistory'),
+    viewManager: document.getElementById('viewManager'),
+    viewHistory: document.getElementById('viewHistory'),
+    
+    // Manager DOM
     fileGrid: document.getElementById('fileGrid'),
     fileCount: document.getElementById('fileCount'),
     selectAll: document.getElementById('selectAll'),
-    searchInput: document.getElementById('searchInput'),
-    
     btnDownloadBatch: document.getElementById('btnDownloadBatch'),
     btnDownloadDirect: document.getElementById('btnDownloadDirect'),
     btnDeleteBatch: document.getElementById('btnDeleteBatch'),
     
+    // History DOM
+    historyTableBody: document.getElementById('historyTableBody'),
+    emptyHistory: document.getElementById('emptyHistory'),
+    btnClearHistory: document.getElementById('btnClearHistory'),
+    
+    // Hidden Logic
     chapterTitle: document.getElementById('chapterTitle'),
     autoGroup: document.getElementById('autoGroup'),
     btnMerge: document.getElementById('btnMerge'),
     editor: document.getElementById('editor'),
     
+    // Modal
     previewModal: document.getElementById('previewModal'),
     previewTitle: document.getElementById('previewTitle'),
     previewDocHeader: document.getElementById('previewDocHeader'),
     previewBody: document.getElementById('previewBody'),
     
-    // History
-    btnHistory: document.getElementById('btnHistory'),
-    historyPanel: document.getElementById('historyPanel'),
-    historyList: document.getElementById('historyList'),
-    btnClearHistory: document.getElementById('btnClearHistory'),
-    
     toast: document.getElementById('toast')
 };
 
-// --- LOGGING ---
+// --- LOGGING SYSTEM (ARRAY BASED) ---
 function addToLog(msg, type = 'success') {
     const time = new Date().toLocaleTimeString('vi-VN', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
-    const item = document.createElement('div');
-    item.className = 'log-item';
-    item.innerHTML = `
-        <div class="log-header">
-            <span class="log-status status-${type}"></span>
-            <span class="log-time">${time}</span>
-        </div>
-        <div class="log-msg">${msg}</div>
-    `;
-    const empty = els.historyList.querySelector('.empty-log');
-    if(empty) empty.remove();
-    els.historyList.prepend(item);
-    if(els.historyList.children.length > 50) els.historyList.lastElementChild.remove();
+    historyLogs.unshift({ msg, type, time, id: Date.now() });
+    
+    // Giới hạn 100 logs
+    if(historyLogs.length > 100) historyLogs.pop();
+    
+    // Nếu đang ở trang History thì render lại ngay
+    if(currentView === 'history') renderHistory();
 }
 
-// --- DB INIT ---
-function initDB() {
-    return new Promise(resolve => {
-        const req = indexedDB.open(DB_NAME, DB_VERSION);
-        req.onupgradeneeded = e => {
-            const d = e.target.result;
-            if(!d.objectStoreNames.contains('files')) d.createObjectStore('files', {keyPath: 'id'});
-            if(!d.objectStoreNames.contains('folders')) d.createObjectStore('folders', {keyPath: 'id'});
-        };
-        req.onsuccess = e => { db = e.target.result; loadData().then(resolve); };
-    });
-}
-async function loadData() {
-    files = await getAll('files');
-    folders = await getAll('folders');
-    if(!folders.find(f=>f.id==='root')) {
-        folders.push({id:'root', name:'Thư mục chính'});
-        saveDB('folders', {id:'root', name:'Thư mục chính'});
+function renderHistory() {
+    const keyword = els.searchInput.value.toLowerCase();
+    const filtered = historyLogs.filter(log => log.msg.toLowerCase().includes(keyword));
+    
+    els.historyTableBody.innerHTML = '';
+    
+    if(filtered.length === 0) {
+        els.emptyHistory.style.display = 'block';
+    } else {
+        els.emptyHistory.style.display = 'none';
+        filtered.forEach(log => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${log.time}</td>
+                <td><span class="badge-status ${log.type}">${log.type.toUpperCase()}</span></td>
+                <td>${log.msg}</td>
+            `;
+            els.historyTableBody.appendChild(tr);
+        });
     }
-    renderFolders(); renderFiles();
 }
-function getAll(s) { return new Promise(r => db.transaction(s,'readonly').objectStore(s).getAll().onsuccess=e=>r(e.target.result||[])); }
-function saveDB(s, i) { db.transaction(s,'readwrite').objectStore(s).put(i); }
-function delDB(s, id) { db.transaction(s,'readwrite').objectStore(s).delete(id); }
 
-// --- INIT APP ---
+// --- VIEW SWITCHING ---
+function switchView(view) {
+    currentView = view;
+    // Update Active Button
+    if(view === 'manager') {
+        els.btnViewFiles.classList.add('active');
+        els.btnViewHistory.classList.remove('active');
+        els.viewManager.classList.add('active');
+        els.viewHistory.classList.remove('active');
+        renderFiles(); // Re-render logic
+    } else {
+        els.btnViewHistory.classList.add('active');
+        els.btnViewFiles.classList.remove('active');
+        els.viewHistory.classList.add('active');
+        els.viewManager.classList.remove('active');
+        renderHistory(); // Re-render logic
+    }
+    // Reset search when switching
+    els.searchInput.value = '';
+    els.searchInput.placeholder = view === 'manager' ? "Tìm tên file..." : "Tìm nhật ký...";
+}
+
+// --- INIT ---
 async function init() {
     await initDB();
     
+    // Events Folder
     els.btnNewFolder.onclick = createFolder;
     els.btnDeleteFolder.onclick = deleteCurrentFolder;
     els.folderSelect.onchange = (e) => { currentFolderId = e.target.value; renderFiles(); };
 
+    // Events Views
+    els.btnViewFiles.onclick = () => switchView('manager');
+    els.btnViewHistory.onclick = () => switchView('history');
+    
+    // Search Event
+    els.searchInput.oninput = () => {
+        if(currentView === 'manager') renderFiles();
+        else renderHistory();
+    };
+
+    // Manager Events
     els.selectAll.onchange = (e) => {
         const list = getFilteredFiles();
         list.forEach(f => f.selected = e.target.checked);
         renderFiles();
     };
-    
-    els.searchInput.oninput = renderFiles;
     els.btnDownloadBatch.onclick = downloadBatchZip;
     els.btnDownloadDirect.onclick = downloadBatchDirect;
     els.btnDeleteBatch.onclick = deleteBatch;
+    
+    // History Events
+    els.btnClearHistory.onclick = () => {
+        historyLogs = [];
+        renderHistory();
+        toast("Đã xóa sạch lịch sử");
+    };
+
     els.btnMerge.onclick = () => merge(true);
     
-    // History Toggle
-    els.btnHistory.onclick = (e) => {
-        e.stopPropagation();
-        els.historyPanel.classList.toggle('show');
-    };
-    document.onclick = (e) => {
-        if (!els.historyPanel.contains(e.target) && e.target !== els.btnHistory) {
-            els.historyPanel.classList.remove('show');
-        }
-    };
-    els.btnClearHistory.onclick = () => { els.historyList.innerHTML = '<div class="empty-log">Chưa có hoạt động</div>'; };
-
     document.addEventListener('keydown', e => {
         if(els.previewModal.classList.contains('show')) {
             if(e.key === 'ArrowLeft') prevChapter();
@@ -146,8 +167,7 @@ async function merge(autoClear) {
     let safeName = inputTitle.replace(/[:*?"<>|]/g, " -").trim();
     let fileName = `${safeName}.docx`;
     
-    // Log nhận input
-    addToLog(`Nhận dữ liệu: ${inputTitle}`, 'info');
+    addToLog(`Nhận tín hiệu: ${inputTitle}`, 'info');
 
     const lines = cleanContent(content);
     if(lines.length === 0) return;
@@ -172,12 +192,10 @@ async function merge(autoClear) {
         
         const existingIndex = targetFile.segments.findIndex(s => s.idSort === chapterNum);
         if (existingIndex !== -1) {
-            // Cập nhật nếu trùng
             targetFile.segments[existingIndex] = segment;
-            addToLog(`Cập nhật nội dung: ${inputTitle}`, 'success');
+            addToLog(`Update nội dung: ${inputTitle}`, 'success');
             toast(`Đã cập nhật: ${inputTitle}`);
         } else {
-            // Thêm mới
             targetFile.segments.push(segment);
             addToLog(`Gộp thêm: ${inputTitle}`, 'success');
             toast(`Đã nối thêm: ${inputTitle}`);
@@ -220,7 +238,54 @@ async function merge(autoClear) {
     }
 
     if(autoClear) els.editor.value = '';
-    renderFiles();
+    
+    // Chỉ render nếu đang ở view manager
+    if(currentView === 'manager') renderFiles();
+}
+
+// --- DB & UTILS ---
+function initDB() {
+    return new Promise(resolve => {
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = e => {
+            const d = e.target.result;
+            if(!d.objectStoreNames.contains('files')) d.createObjectStore('files', {keyPath: 'id'});
+            if(!d.objectStoreNames.contains('folders')) d.createObjectStore('folders', {keyPath: 'id'});
+        };
+        req.onsuccess = e => { db = e.target.result; loadData().then(resolve); };
+    });
+}
+async function loadData() {
+    files = await getAll('files');
+    folders = await getAll('folders');
+    if(!folders.find(f=>f.id==='root')) {
+        folders.push({id:'root', name:'Thư mục chính'});
+        saveDB('folders', {id:'root', name:'Thư mục chính'});
+    }
+    renderFolders(); renderFiles();
+}
+function getAll(s) { return new Promise(r => db.transaction(s,'readonly').objectStore(s).getAll().onsuccess=e=>r(e.target.result||[])); }
+function saveDB(s, i) { db.transaction(s,'readwrite').objectStore(s).put(i); }
+function delDB(s, id) { db.transaction(s,'readwrite').objectStore(s).delete(id); }
+
+function renderFolders() {
+    els.folderSelect.innerHTML = '';
+    folders.forEach(f => {
+        const opt = document.createElement('option');
+        opt.value = f.id; opt.innerText = f.name;
+        if(f.id === currentFolderId) opt.selected = true;
+        els.folderSelect.appendChild(opt);
+    });
+}
+function createFolder() { const n = prompt("Tên:"); if(n){const f={id:Date.now().toString(),name:n}; folders.push(f); saveDB('folders',f); currentFolderId=f.id; renderFolders(); renderFiles();} }
+function deleteCurrentFolder() {
+    if(currentFolderId==='root') return toast("Lỗi: Root");
+    if(confirm("Xóa folder?")) {
+        files.filter(f=>f.folderId===currentFolderId).forEach(f=>delDB('files',f.id));
+        files = files.filter(f=>f.folderId!==currentFolderId);
+        delDB('folders', currentFolderId); folders=folders.filter(f=>f.id!==currentFolderId);
+        currentFolderId='root'; renderFolders(); renderFiles();
+    }
 }
 
 function generateDocxFromSegments(mainHeader, segments) {
@@ -236,11 +301,12 @@ function generateDocxFromSegments(mainHeader, segments) {
     return Packer.toBlob(new Document({sections:[{children}]}));
 }
 
-// --- RENDER & SORT ---
 function getFilteredFiles() {
     let list = files.filter(f => f.folderId === currentFolderId);
-    const keyword = document.getElementById('searchInput').value.toLowerCase().trim();
-    if(keyword) list = list.filter(f => f.name.toLowerCase().includes(keyword));
+    if(currentView === 'manager') {
+        const keyword = els.searchInput.value.toLowerCase().trim();
+        if(keyword) list = list.filter(f => f.name.toLowerCase().includes(keyword));
+    }
     list.sort((a,b) => getChapterNum(a.name) - getChapterNum(b.name));
     return list;
 }
@@ -268,17 +334,6 @@ function renderFiles() {
     });
 }
 
-function renderFolders() {
-    els.folderSelect.innerHTML = '';
-    folders.forEach(f => {
-        const opt = document.createElement('option');
-        opt.value = f.id; opt.innerText = f.name;
-        if(f.id === currentFolderId) opt.selected = true;
-        els.folderSelect.appendChild(opt);
-    });
-}
-
-// --- ACTIONS ---
 window.openPreview = (id) => {
     const f = files.find(x=>x.id===id); if(!f) return; previewFileId = id;
     const list = getFilteredFiles(); const idx = list.findIndex(x=>x.id===id);
@@ -299,16 +354,6 @@ window.deleteOne = (id) => { if(confirm('Xóa?')) { delDB('files', id); files=fi
 function deleteBatch() { const s = getFilteredFiles().filter(f=>f.selected); if(confirm(`Xóa ${s.length}?`)) { s.forEach(f=>delDB('files',f.id)); files=files.filter(f=>!f.selected || f.folderId!==currentFolderId); renderFiles(); } }
 function downloadBatchZip() { const s = getFilteredFiles().filter(f=>f.selected); if(!s.length) return toast("Chưa chọn"); const z = new JSZip(); s.forEach(f=>z.file(f.name, f.blob)); z.generateAsync({type:"blob"}).then(c=>saveAs(c, `Batch_${Date.now()}.zip`)); }
 async function downloadBatchDirect() { const s = getFilteredFiles().filter(f=>f.selected); if(!s.length) return toast("Chưa chọn"); toast(`Tải ${s.length} file...`); for(let i=0;i<s.length;i++) { if(s[i].blob) { saveAs(s[i].blob, s[i].name); await new Promise(r=>setTimeout(r,200)); } } }
-function createFolder() { const n = prompt("Tên:"); if(n){const f={id:Date.now().toString(),name:n}; folders.push(f); saveDB('folders',f); currentFolderId=f.id; renderFolders(); renderFiles();} }
-function deleteCurrentFolder() {
-    if(currentFolderId==='root') return toast("Lỗi: Root Folder");
-    if(confirm("Xóa folder?")) {
-        files.filter(f=>f.folderId===currentFolderId).forEach(f=>delDB('files',f.id));
-        files = files.filter(f=>f.folderId!==currentFolderId);
-        delDB('folders', currentFolderId); folders=folders.filter(f=>f.id!==currentFolderId);
-        currentFolderId='root'; renderFolders(); renderFiles();
-    }
-}
 function toast(m) { els.toast.innerText = m; els.toast.classList.add('show'); setTimeout(()=>els.toast.classList.remove('show'), 2000); }
 
 init();
