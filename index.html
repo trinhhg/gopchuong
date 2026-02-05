@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gộp Chương V9</title>
+    <title>Tool Gộp Chương V10</title>
     <link rel="stylesheet" href="index.css">
     <script src="https://unpkg.com/docx@7.1.0/build/index.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
@@ -14,7 +14,7 @@
 <div class="app-layout">
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-header">
-            <span class="brand">✨ DOCX DB</span>
+            <span class="brand">✨ AUTO TOOL</span>
             <span class="count-badge" id="fileCount">0</span>
         </div>
         <div class="sidebar-content" id="sidebarList"></div>
@@ -29,8 +29,8 @@
 
     <main class="main-area">
         <div class="top-nav">
-            <div class="nav-container">
-                <button class="icon-btn" id="toggleSidebar" title="Mở Sidebar">☰</button>
+            <div class="nav-left-group">
+                <button class="icon-btn" id="toggleSidebar" title="Đóng/Mở Menu">☰</button>
                 <div class="tab-group">
                     <button class="tab-pill active" data-tab="editor-view">Soạn thảo</button>
                     <button class="tab-pill" data-tab="manager-view">Quản lý file</button>
@@ -47,16 +47,16 @@
                     </div>
                 </div>
                 <div class="action-group">
-                    <div style="display:flex; align-items:center; margin-right:10px;">
-                        <input type="checkbox" id="autoGroup" checked style="width:16px; height:16px; cursor: pointer;">
-                        <label for="autoGroup" style="margin-left:5px; font-weight:600; font-size:13px; cursor: pointer;">Gộp 1.x vào 1</label>
+                    <div class="checkbox-wrapper">
+                        <input type="checkbox" id="autoGroup" checked>
+                        <label for="autoGroup">Gộp 1.x vào 1</label>
                     </div>
                     <button class="btn-ghost" id="btnClearOnly">Xóa trắng</button>
                     <button class="btn-gradient" id="btnMerge">⚡ Gộp & Lưu</button>
                 </div>
             </div>
             <div class="editor-wrapper">
-                <textarea id="editor" placeholder="Đang chờ dữ liệu..."></textarea>
+                <textarea id="editor" placeholder="Chờ dữ liệu từ tool..."></textarea>
             </div>
         </div>
 
@@ -71,7 +71,7 @@
                 </div>
                 <div class="file-table-header">
                     <div class="th-check"><input type="checkbox" id="selectAllManager"></div>
-                    <div class="th-name">Tên</div>
+                    <div class="th-name">Tên file (Click xem thử)</div>
                     <div class="th-wc">Số từ</div>
                     <div class="th-action">Tác vụ</div>
                 </div>
@@ -84,14 +84,12 @@
 <div id="previewModal" class="modal-overlay">
     <div class="modal-content">
         <div class="modal-header">
-            <h3 id="previewTitle">Preview</h3>
+            <h3 id="previewTitle">Xem trước</h3>
             <button class="close-modal" onclick="closePreview()">✕</button>
         </div>
         <div class="modal-body">
             <div id="previewContainer">
-                <h1 id="previewDocHeader"></h1>
-                <pre id="previewBody"></pre>
-            </div>
+                <h1 id="previewDocHeader"></h1> <pre id="previewBody"></pre>   </div>
         </div>
     </div>
 </div>
