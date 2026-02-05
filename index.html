@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Writer Core V19</title>
+    <title>Writer Core V20</title>
     <link rel="stylesheet" href="index.css">
     <script src="https://unpkg.com/docx@7.1.0/build/index.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
 
@@ -20,8 +20,6 @@
 
 <div class="dashboard">
     <header class="top-bar">
-        <div class="brand">📂 MANAGER V19</div>
-        
         <div class="folder-controls">
             <select id="folderSelect" class="folder-select"></select>
             <button id="btnNewFolder" class="btn-icon" title="Thêm thư mục">+</button>
@@ -29,48 +27,65 @@
         </div>
 
         <div class="search-box">
-            <span class="search-icon">🔍</span>
-            <input type="text" id="searchInput" placeholder="Tìm tên file...">
+            <span class="search-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            </span>
+            <input type="text" id="searchInput" placeholder="Tìm kiếm...">
         </div>
 
-        <div class="history-wrapper">
-            <button id="btnHistory" class="btn-icon" title="Lịch sử hoạt động">🕒</button>
-            <div id="historyPanel" class="history-dropdown">
-                <div class="history-header">
-                    <span>Nhật ký hoạt động</span>
-                    <button id="btnClearHistory" class="btn-text-small">Xóa hết</button>
-                </div>
-                <div id="historyList" class="history-list">
-                    <div class="empty-log">Chưa có hoạt động nào</div>
-                </div>
-            </div>
+        <div class="nav-middle">
+            <button id="btnViewHistory" class="nav-pill">🕒 Lịch sử</button>
+            <button id="btnViewFiles" class="nav-pill active">📂 File Gộp</button>
         </div>
 
         <div class="settings">
             <label class="toggle-switch">
                 <input type="checkbox" id="autoGroup" checked>
                 <span class="slider"></span>
-                <span class="label">Gộp thông minh (1.x ➜ 1)</span>
+                <span class="label">Gộp thông minh</span>
             </label>
         </div>
     </header>
 
-    <main class="content-area">
-        <div class="toolbar">
-            <div class="left-tools">
-                <label class="chk-all">
-                    <input type="checkbox" id="selectAll"> Chọn tất cả (<span id="fileCount">0</span> file)
-                </label>
+    <main class="content-wrapper">
+        
+        <div id="viewManager" class="view-section active">
+            <div class="toolbar">
+                <div class="left-tools">
+                    <label class="chk-all">
+                        <input type="checkbox" id="selectAll"> Chọn tất cả (<span id="fileCount">0</span> file)
+                    </label>
+                </div>
+                <div class="right-tools">
+                    <button id="btnDownloadDirect" class="btn-tool secondary">⬇ Tải Lẻ</button>
+                    <button id="btnDownloadBatch" class="btn-tool primary">📦 Tải ZIP</button>
+                    <button id="btnDeleteBatch" class="btn-tool danger">🗑 Xóa</button>
+                </div>
             </div>
-            <div class="right-tools">
-                <button id="btnDownloadDirect" class="btn-tool secondary">⬇ Tải Lẻ (No Zip)</button>
-                <button id="btnDownloadBatch" class="btn-tool primary">📦 Tải ZIP</button>
-                <button id="btnDeleteBatch" class="btn-tool danger">🗑 Xóa</button>
+            <div id="fileGrid" class="file-grid"></div>
+        </div>
+
+        <div id="viewHistory" class="view-section">
+            <div class="history-toolbar">
+                <h3>Nhật ký hoạt động</h3>
+                <button id="btnClearHistory" class="btn-tool danger">Xóa lịch sử</button>
+            </div>
+            <div class="history-table-wrapper">
+                <table class="history-table">
+                    <thead>
+                        <tr>
+                            <th width="150">Thời gian</th>
+                            <th width="100">Trạng thái</th>
+                            <th>Nội dung thông báo</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyTableBody">
+                        </tbody>
+                </table>
+                <div id="emptyHistory" class="empty-state" style="display:none">Chưa có dữ liệu lịch sử</div>
             </div>
         </div>
 
-        <div id="fileGrid" class="file-grid">
-            </div>
     </main>
 </div>
 
@@ -79,11 +94,11 @@
         <div class="modal-header">
             <h3 id="previewTitle">Tên File</h3>
             <div class="modal-nav">
-                <button onclick="prevChapter()" class="nav-btn" title="Chương trước (←)">❮</button>
+                <button onclick="prevChapter()" class="nav-btn">❮</button>
                 <span id="previewCounter">1/1</span>
-                <button onclick="nextChapter()" class="nav-btn" title="Chương sau (→)">❯</button>
+                <button onclick="nextChapter()" class="nav-btn">❯</button>
             </div>
-            <button onclick="closePreview()" class="btn-close" title="Đóng (Esc)">✕</button>
+            <button onclick="closePreview()" class="btn-close">✕</button>
         </div>
         <div class="modal-body">
             <div class="paper">
