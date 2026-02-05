@@ -1,25 +1,21 @@
 // CONFIG
-const DB_NAME = 'AutoPilotV23'; // Giữ nguyên cấu trúc DB V23
+const DB_NAME = 'AutoPilotV23'; // Giữ nguyên DB
 const DB_VERSION = 2;
 let db = null;
 let files = [];
 let folders = [];
 let historyLogs = [];
-let checklists = {}; 
+let checklists = {};
 let currentFolderId = 'root';
 let currentView = 'manager';
 let previewFileId = null;
-
-// QUEUE SYSTEM (QUAN TRỌNG)
-let mergeQueue = []; 
-let isProcessingQueue = false;
 
 // --- HELPERS ---
 function countWords(text) { if (!text || !text.trim()) return 0; return text.trim().split(/\s+/).length; }
 function getChapterNum(title) { const match = title.match(/(?:Chương|Chapter|Hồi)\s*(\d+(\.\d+)?)/i); return match ? parseFloat(match[1]) : Date.now(); }
 function cleanContent(text) { return text.split('\n').map(l => l.trim()).filter(l => l.length > 0); }
 
-// --- DOM ---
+// --- DOM ELEMENTS ---
 const els = {
     folderSelect: document.getElementById('folderSelect'),
     btnNewFolder: document.getElementById('btnNewFolder'),
@@ -58,43 +54,136 @@ const els = {
     toast: document.getElementById('toast')
 };
 
-// --- INIT ---
+// --- DB SYSTEM ---
+function initDB() {
+    return new Promise(resolve => {
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = e => {
+            const d = e.target.result;
+            if(!d.objectStoreNames.contains('files')) d.createObjectStore('files', {keyPath: 'id'});
+            if(!d.objectStoreNames.contains('folders')) d.createObjectStore('folders', {keyPath: 'id'});
+            if(!d.objectStoreNames.contains('history')) d.createObjectStore('history', {keyPath: 'id'});
+            if(!d.objectStoreNames.contains('checklists')) d.createObjectStore('checklists', {keyPath: 'folderId'});
+        };
+        req.onsuccess = e => { db = e.target.result; loadData().then(resolve); };
+    });
+}
+
+async function loadData() {
+    files = await getAll('files');
+    folders = await getAll('folders');
+    historyLogs = (await getAll('history')).sort((a,b)=>b.timestamp-a.timestamp);
+    const clData = await getAll('checklists');
+    clData.forEach(item => checklists[item.folderId] = item.list);
+    if(!folders.find(f=>f.id==='root')) {
+        folders.push({id:'root', name:'Thư mục chính'});
+        saveDB('folders', {id:'root', name:'Thư mục chính'});
+    }
+    renderFolders(); renderFiles();
+}
+
+function getAll(s) { return new Promise(r => db.transaction(s,'readonly').objectStore(s).getAll().onsuccess=e=>r(e.target.result||[])); }
+function saveDB(s, i) { db.transaction(s,'readwrite').objectStore(s).put(i); }
+function delDB(s, id) { db.transaction(s,'readwrite').objectStore(s).delete(id); }
+function clearStore(s) { const tx = db.transaction(s, 'readwrite'); tx.objectStore(s).clear(); }
+
+// --- LOGGING ---
+function addToLog(msg, type = 'success') {
+    const now = new Date();
+    const time = now.toLocaleTimeString('vi-VN', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    const logItem = { id: Date.now(), time: time, msg: msg, type: type, timestamp: now.getTime() };
+    historyLogs.unshift(logItem);
+    saveDB('history', logItem);
+    if(historyLogs.length > 500) { const removed = historyLogs.pop(); delDB('history', removed.id); }
+    if(currentView === 'history') renderHistory();
+}
+
+function renderHistory() {
+    const keyword = els.searchInput.value.toLowerCase();
+    const filterType = els.historyFilter.value; 
+    const filtered = historyLogs.filter(log => {
+        const matchSearch = log.msg.toLowerCase().includes(keyword);
+        const matchType = filterType === 'all' || log.type === filterType;
+        return matchSearch && matchType;
+    });
+    els.historyTableBody.innerHTML = '';
+    if(filtered.length === 0) els.emptyHistory.style.display = 'block';
+    else {
+        els.emptyHistory.style.display = 'none';
+        filtered.forEach(log => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td>${log.time}</td><td><span class="badge-status ${log.type}">${log.type.toUpperCase()}</span></td><td>${log.msg}</td>`;
+            els.historyTableBody.appendChild(tr);
+        });
+    }
+}
+
+// --- APP INIT ---
 async function init() {
     await initDB();
     
-    // Đánh dấu trạng thái rảnh ban đầu
+    // Đánh dấu trạng thái rảnh ban đầu để Tampermonkey không spam
     localStorage.setItem('is_merging_busy', 'false');
 
     els.btnNewFolder.onclick = createFolder;
     els.btnDeleteFolder.onclick = deleteCurrentFolder;
     els.folderSelect.onchange = (e) => { currentFolderId = e.target.value; switchView(currentView); };
-    
+
     els.btnViewFiles.onclick = () => switchView('manager');
     els.btnViewHistory.onclick = () => switchView('history');
     els.btnViewChecklist.onclick = () => switchView('checklist');
-    
-    els.searchInput.oninput = () => { currentView === 'manager' ? renderFiles() : renderHistory(); };
-    els.btnImportChecklist.onclick = importChecklist;
-    els.btnClearChecklist.onclick = clearChecklist;
-    
+
+    els.searchInput.oninput = () => {
+        if(currentView === 'manager') renderFiles();
+        else renderHistory();
+    };
+
+    els.btnImportChecklist.onclick = () => {
+        try {
+            const raw = els.checklistInput.value;
+            if(!raw) return;
+            const newItems = JSON.parse(raw);
+            let currentList = checklists[currentFolderId] || [];
+            newItems.forEach(item => {
+                if(!currentList.find(x => x.num === item.num)) currentList.push(item);
+            });
+            currentList.sort((a,b) => a.num - b.num);
+            checklists[currentFolderId] = currentList;
+            saveDB('checklists', {folderId: currentFolderId, list: currentList});
+            toast(`Đã nhập ${newItems.length} mục vào danh sách!`);
+            renderChecklist(); switchView('checklist');
+        } catch(e) { console.error(e); toast("Lỗi nhập danh sách"); }
+    };
+
+    els.btnClearChecklist.onclick = () => {
+        if(confirm("Xóa danh sách theo dõi?")) {
+            delete checklists[currentFolderId];
+            delDB('checklists', currentFolderId);
+            renderChecklist();
+        }
+    };
+
     els.historyFilter.onchange = renderHistory;
-    els.selectAll.onchange = (e) => { getFilteredFiles().forEach(f => f.selected = e.target.checked); renderFiles(); };
+    els.selectAll.onchange = (e) => {
+        const list = getFilteredFiles();
+        list.forEach(f => f.selected = e.target.checked);
+        renderFiles();
+    };
     els.btnDownloadBatch.onclick = downloadBatchZip;
     els.btnDownloadDirect.onclick = downloadBatchDirect;
     els.btnDeleteBatch.onclick = deleteBatch;
-    els.btnClearHistory.onclick = () => { if(confirm("Xóa lịch sử?")){ historyLogs=[]; clearStore('history'); renderHistory(); } };
+    els.btnClearHistory.onclick = () => {
+        if(confirm("Xóa toàn bộ lịch sử?")) { historyLogs=[]; clearStore('history'); renderHistory(); toast("Đã xóa lịch sử"); }
+    };
 
-    // BUTTON MERGE: Đẩy vào Queue thay vì chạy ngay
+    // QUEUE SYSTEM TRIGGER
     els.btnMerge.onclick = () => {
         const payload = {
             title: els.chapterTitle.value,
             content: els.editor.value,
             autoGroup: els.autoGroup.checked
         };
-        // Clear ngay lập tức để Tampermonkey biết đã nhận
-        els.editor.value = ''; 
-        
-        // Đẩy vào hàng đợi
+        els.editor.value = ''; // Clear input ngay
         mergeQueue.push(payload);
         processQueue();
     };
@@ -108,58 +197,78 @@ async function init() {
     });
 }
 
-// --- QUEUE PROCESSOR (TRÁI TIM CỦA V25) ---
+// --- QUEUE PROCESSOR ---
+let mergeQueue = [];
+let isProcessingQueue = false;
+
 async function processQueue() {
-    if (isProcessingQueue) return; // Đang chạy thì thôi
+    if (isProcessingQueue) return;
     if (mergeQueue.length === 0) {
-        localStorage.setItem('is_merging_busy', 'false'); // Báo rảnh
+        localStorage.setItem('is_merging_busy', 'false');
         return;
     }
-
     isProcessingQueue = true;
-    localStorage.setItem('is_merging_busy', 'true'); // Báo bận
+    localStorage.setItem('is_merging_busy', 'true');
 
     try {
-        const task = mergeQueue.shift(); // Lấy task đầu tiên
-        await performMerge(task); // Chờ chạy xong hoàn toàn
+        const task = mergeQueue.shift();
+        await performMerge(task);
     } catch (e) {
-        console.error("Lỗi xử lý:", e);
+        console.error(e);
     } finally {
         isProcessingQueue = false;
-        // Gọi đệ quy để xử lý tiếp task còn lại (nếu có)
-        setTimeout(processQueue, 10); 
+        setTimeout(processQueue, 10);
     }
 }
 
-// --- CORE MERGE LOGIC ---
+// --- MERGE LOGIC (Updated Regex) ---
 async function performMerge(task) {
     const { title: inputTitle, content, autoGroup } = task;
-    if (!content.trim()) return;
+    if(!content.trim()) return;
 
-    let safeName = inputTitle.replace(/[:*?"<>|]/g, " -").trim();
-    let fileName = `${safeName}.docx`;
+    // 1. Phân tích tên chương để lấy số và TITLE
+    // Regex bắt: (Chương/Chapter) (Số) (.Số con)? (Phần còn lại là Title)
+    // Ví dụ: "Chương 1.1: Ngôi nhà" -> Main=1, Sub=1, Title=": Ngôi nhà"
+    const groupMatch = inputTitle.match(/(?:Chương|Chapter|Hồi)\s*(\d+)(?:\.\d+)?(.*)/i);
     
-    const lines = cleanContent(content);
-    const chapterNum = getChapterNum(inputTitle);
-    
-    let segment = { idSort: chapterNum, lines: lines, header: inputTitle };
+    let fileName;
+    let headerInDoc;
 
-    if (autoGroup) {
-        const match = inputTitle.match(/(?:Chương|Chapter|Hồi)\s*(\d+)/i);
-        if (match) fileName = `Chương ${match[1]}.docx`;
+    if (autoGroup && groupMatch) {
+        const mainNum = groupMatch[1]; 
+        const titleSuffix = groupMatch[2] ? groupMatch[2].trim() : ""; // Lấy phần đuôi (vd: ": Ngôi nhà")
+        
+        // Tên file gốc (cho mục đích lưu trữ và tìm kiếm)
+        // Tạo header có chứa cả tên chương: "Chương 1: Ngôi nhà"
+        let baseName = `Chương ${mainNum}`;
+        if(titleSuffix) baseName += ` ${titleSuffix}`;
+        
+        // Chuẩn hóa tên file (xóa ký tự cấm của Window nhưng giữ lại tên)
+        // Thay dấu : bằng - cho an toàn
+        let safeFileName = baseName.replace(/[:*?"<>|]/g, " -").replace(/\s+-\s+/, " - "); 
+        fileName = `${safeFileName}.docx`;
+        
+        // Header trong file Word thì giữ nguyên dấu :
+        headerInDoc = baseName.replace(/\s+:/, ":"); 
+    } else {
+        // Nếu không gộp hoặc không khớp regex thì dùng tên gốc
+        let safeName = inputTitle.replace(/[:*?"<>|]/g, " -").trim();
+        fileName = `${safeName}.docx`;
+        headerInDoc = inputTitle;
     }
 
-    // Load lại từ DB để đảm bảo dữ liệu mới nhất (quan trọng khi chạy liên tục)
-    // Tuy nhiên vì ta đang chạy queue tuần tự trên biến global `files`
-    // nên thao tác trên `files` là an toàn.
-    
+    const lines = cleanContent(content);
+    if(lines.length === 0) return;
+
+    const chapterNum = getChapterNum(inputTitle);
+    let segment = { idSort: chapterNum, lines: lines, header: inputTitle };
+
     let targetFile = files.find(f => f.name === fileName && f.folderId === currentFolderId);
 
-    if (targetFile) {
-        if (!targetFile.segments) targetFile.segments = [];
+    if(targetFile) {
+        if(!targetFile.segments) targetFile.segments = [];
         
         const existingIndex = targetFile.segments.findIndex(s => s.idSort === chapterNum);
-        
         if (existingIndex !== -1) {
             targetFile.segments[existingIndex] = segment;
             addToLog(`Cập nhật: ${inputTitle}`, 'warn');
@@ -170,28 +279,29 @@ async function performMerge(task) {
 
         targetFile.segments.sort((a,b) => a.idSort - b.idSort);
         
-        // Rebuild Text
         let allText = "";
         targetFile.segments.forEach(seg => { allText += seg.lines.join('\n') + '\n'; });
 
-        targetFile.headerInDoc = targetFile.name.replace('.docx','');
+        // Update header nếu cần (để đảm bảo title mới nhất được áp dụng nếu file được tạo từ 1.1)
+        // Nhưng thường ta muốn giữ Header của file gốc. Ở đây ta ưu tiên Header từ input nếu file chưa có header chuẩn
+        if(!targetFile.headerInDoc || targetFile.headerInDoc.includes("Chương Mới")) {
+            targetFile.headerInDoc = headerInDoc;
+        }
+
         targetFile.wordCount = countWords(targetFile.headerInDoc + " " + allText);
         targetFile.timestamp = Date.now();
-        
-        // Generate Blob (Tốn thời gian nhất là bước này)
         targetFile.blob = await generateDocxFromSegments(targetFile.headerInDoc, targetFile.segments);
         saveDB('files', targetFile);
-        
     } else {
-        // Create New
-        const wc = countWords(inputTitle + " " + content);
+        // TẠO MỚI
+        const wc = countWords(headerInDoc + " " + content); // Tính cả header
         targetFile = {
             id: Date.now(), name: fileName, folderId: currentFolderId,
             segments: [segment],
-            headerInDoc: inputTitle,
+            headerInDoc: headerInDoc, // Header có Title
             wordCount: wc, timestamp: Date.now(), selected: false
         };
-        targetFile.blob = await generateDocxFromSegments(inputTitle, targetFile.segments);
+        targetFile.blob = await generateDocxFromSegments(headerInDoc, targetFile.segments);
         files.push(targetFile);
         saveDB('files', targetFile);
         
@@ -199,38 +309,37 @@ async function performMerge(task) {
         addToLog(`Gộp thêm: ${inputTitle}`, 'success');
     }
 
-    // Cập nhật UI ngay lập tức
+    // Auto update UI (increment title input) for next F2 if needed
+    // Logic này chỉ để hiển thị bên UI, không ảnh hưởng F2 từ Tamper
+    const numMatch = inputTitle.match(/(\d+)(\.(\d+))?/);
+    if(numMatch) {
+        if(numMatch[2]) els.chapterTitle.value = inputTitle.replace(numMatch[0], `${numMatch[1]}.${parseInt(numMatch[3])+1}`);
+        else els.chapterTitle.value = inputTitle.replace(numMatch[1], parseInt(numMatch[1])+1);
+    }
+
     if (currentView === 'manager') renderFiles();
     if (currentView === 'checklist') renderChecklist();
 }
 
-// --- CHECKLIST & DB UTILS (Giữ nguyên) ---
-function importChecklist() {
-    try {
-        const raw = els.checklistInput.value;
-        if(!raw) return;
-        const newItems = JSON.parse(raw);
-        let currentList = checklists[currentFolderId] || [];
-        
-        newItems.forEach(item => {
-            if(!currentList.find(x => x.num === item.num)) currentList.push(item);
-        });
-        currentList.sort((a,b) => a.num - b.num);
-        checklists[currentFolderId] = currentList;
-        saveDB('checklists', {folderId: currentFolderId, list: currentList});
-        toast(`Nhập ${newItems.length} mục!`);
-        renderChecklist(); switchView('checklist');
-    } catch(e) { console.error(e); }
-}
-
-function clearChecklist() {
-    if(confirm("Xóa danh sách?")) {
-        delete checklists[currentFolderId];
-        delDB('checklists', currentFolderId);
+// --- VIEW SWITCHING ---
+function switchView(view) {
+    currentView = view;
+    [els.btnViewFiles, els.btnViewHistory, els.btnViewChecklist].forEach(b => b.classList.remove('active'));
+    [els.viewManager, els.viewHistory, els.viewChecklist].forEach(v => v.classList.remove('active'));
+    
+    if(view === 'manager') {
+        els.btnViewFiles.classList.add('active'); els.viewManager.classList.add('active');
+        renderFiles();
+    } else if(view === 'history') {
+        els.btnViewHistory.classList.add('active'); els.viewHistory.classList.add('active');
+        renderHistory();
+    } else if(view === 'checklist') {
+        els.btnViewChecklist.classList.add('active'); els.viewChecklist.classList.add('active');
         renderChecklist();
     }
 }
 
+// --- CHECKLIST RENDER ---
 function renderChecklist() {
     const list = checklists[currentFolderId] || [];
     const currentFiles = files.filter(f => f.folderId === currentFolderId);
@@ -245,9 +354,8 @@ function renderChecklist() {
     let doneCount = 0;
 
     if(list.length === 0) {
-        els.checklistBody.innerHTML = '<div class="empty-state">Chưa có dữ liệu.</div>';
+        els.checklistBody.innerHTML = '<div class="empty-state">Chưa có dữ liệu. Hãy ấn F2 (Quét List) bên web truyện.</div>';
     } else {
-        // Tối ưu render: Dùng Fragment
         const frag = document.createDocumentFragment();
         list.forEach(item => {
             const isDone = doneChapters.has(item.num);
@@ -270,64 +378,7 @@ function renderChecklist() {
     els.progBar.style.width = `${percent}%`;
 }
 
-// --- STANDARD FUNCTIONS ---
-function initDB() {
-    return new Promise(resolve => {
-        const req = indexedDB.open(DB_NAME, DB_VERSION);
-        req.onupgradeneeded = e => {
-            const d = e.target.result;
-            if(!d.objectStoreNames.contains('files')) d.createObjectStore('files', {keyPath: 'id'});
-            if(!d.objectStoreNames.contains('folders')) d.createObjectStore('folders', {keyPath: 'id'});
-            if(!d.objectStoreNames.contains('history')) d.createObjectStore('history', {keyPath: 'id'});
-            if(!d.objectStoreNames.contains('checklists')) d.createObjectStore('checklists', {keyPath: 'folderId'});
-        };
-        req.onsuccess = e => { db = e.target.result; loadData().then(resolve); };
-    });
-}
-async function loadData() {
-    files = await getAll('files');
-    folders = await getAll('folders');
-    historyLogs = (await getAll('history')).sort((a,b)=>b.timestamp-a.timestamp);
-    const clData = await getAll('checklists');
-    clData.forEach(item => checklists[item.folderId] = item.list);
-    if(!folders.find(f=>f.id==='root')) {
-        folders.push({id:'root', name:'Thư mục chính'});
-        saveDB('folders', {id:'root', name:'Thư mục chính'});
-    }
-    renderFolders(); renderFiles();
-}
-function addToLog(msg, type = 'success') {
-    const now = new Date();
-    const time = now.toLocaleTimeString('vi-VN', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
-    const logItem = { id: Date.now(), time: time, msg: msg, type: type, timestamp: now.getTime() };
-    historyLogs.unshift(logItem);
-    saveDB('history', logItem);
-    if(historyLogs.length > 500) { const removed = historyLogs.pop(); delDB('history', removed.id); }
-    if(currentView === 'history') renderHistory();
-}
-function renderHistory() {
-    const keyword = els.searchInput.value.toLowerCase();
-    const filterType = els.historyFilter.value; 
-    const filtered = historyLogs.filter(log => {
-        const matchSearch = log.msg.toLowerCase().includes(keyword);
-        const matchType = filterType === 'all' || log.type === filterType;
-        return matchSearch && matchType;
-    });
-    els.historyTableBody.innerHTML = '';
-    if(filtered.length === 0) els.emptyHistory.style.display = 'block';
-    else {
-        els.emptyHistory.style.display = 'none';
-        filtered.forEach(log => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `<td>${log.time}</td><td><span class="badge-status ${log.type}">${log.type.toUpperCase()}</span></td><td>${log.msg}</td>`;
-            els.historyTableBody.appendChild(tr);
-        });
-    }
-}
-function getAll(s) { return new Promise(r => db.transaction(s,'readonly').objectStore(s).getAll().onsuccess=e=>r(e.target.result||[])); }
-function saveDB(s, i) { db.transaction(s,'readwrite').objectStore(s).put(i); }
-function delDB(s, id) { db.transaction(s,'readwrite').objectStore(s).delete(id); }
-function clearStore(s) { const tx = db.transaction(s, 'readwrite'); tx.objectStore(s).clear(); }
+// --- OTHER UTILS ---
 function renderFolders() {
     els.folderSelect.innerHTML = '';
     folders.forEach(f => {
@@ -353,6 +404,5 @@ function deleteBatch() { const s = getFilteredFiles().filter(f=>f.selected); if(
 function downloadBatchZip() { const s = getFilteredFiles().filter(f=>f.selected); if(!s.length) return toast("Chưa chọn"); const z = new JSZip(); s.forEach(f=>z.file(f.name, f.blob)); z.generateAsync({type:"blob"}).then(c=>saveAs(c, `Batch_${Date.now()}.zip`)); }
 async function downloadBatchDirect() { const s = getFilteredFiles().filter(f=>f.selected); if(!s.length) return toast("Chưa chọn"); toast(`Tải ${s.length} file...`); for(let i=0;i<s.length;i++) { if(s[i].blob) { saveAs(s[i].blob, s[i].name); await new Promise(r=>setTimeout(r,200)); } } }
 function toast(m) { els.toast.innerText = m; els.toast.classList.add('show'); setTimeout(()=>els.toast.classList.remove('show'), 2000); }
-function switchView(view) { currentView = view; [els.btnViewFiles, els.btnViewHistory, els.btnViewChecklist].forEach(b => b.classList.remove('active')); [els.viewManager, els.viewHistory, els.viewChecklist].forEach(v => v.classList.remove('active')); if(view === 'manager') { els.btnViewFiles.classList.add('active'); els.viewManager.classList.add('active'); renderFiles(); } else if(view === 'history') { els.btnViewHistory.classList.add('active'); els.viewHistory.classList.add('active'); renderHistory(); } else if(view === 'checklist') { els.btnViewChecklist.classList.add('active'); els.viewChecklist.classList.add('active'); renderChecklist(); } }
 
 init();
